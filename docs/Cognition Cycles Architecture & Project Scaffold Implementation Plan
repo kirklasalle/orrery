@@ -1,0 +1,113 @@
+# Cognition Cycles: Architecture & Project Scaffold Implementation Plan
+
+This implementation plan outlines the blueprint to create the **Cognition Cycles** framework ("outgrowing the basic loop") in `d:\Projects\cognition_cycles`. 
+
+Cognition Cycles replaces traditional single-step ReAct loops with stateful, multi-tier cognitive state loops operating across perception, planning, execution, and reflection.
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> - The framework is structured using standard Python with Pydantic for state contracts and typing, supporting async cycle execution.
+> - `.antigravity/` configuration is supplied with System 1 (Perception), System 2 (Deliberation), and Aggregator (Synthesis) agent role prompts and a multi-stage YAML workflow specification.
+> - Git initialization and initial commit will be prepared as requested once execution begins.
+
+---
+
+## Proposed Scaffolding & Directory Structure
+
+```text
+cognition-cycles/
+├── .antigravity/
+│   ├── rules.md                  # Agent behavior rules (System 1/2 roles, IDE interface constraints)
+│   └── workflows/
+│       └── cognition_cycle.yaml  # Antigravity v2 orchestration workflow (Perception -> Deliberation -> Synthesis)
+├── config/
+│   └── settings.yaml             # YAML project settings, thresholds, and cycle configurations
+├── docs/
+│   ├── architecture.md           # Deep dive into cycle dispatching, 4 tiers, and meta-skills
+│   └── setup_guide.md            # Environment setup and usage guide
+├── src/
+│   ├── __init__.py
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── types.py              # Pydantic schemas: CognitiveState, Phase, Tier, Checkpoint, Critique
+│   │   ├── dispatcher.py         # CycleDispatcher multi-stage state machine (Perception->Planning->Execution->Reflection)
+│   │   ├── state.py              # State memory & CheckpointManager (save, restore, backtrack)
+│   │   └── critique.py           # SelfCritiqueEngine for evaluation gates and reflection
+│   ├── cycles/
+│   │   ├── __init__.py
+│   │   ├── base.py               # Base class for abstraction tiers
+│   │   ├── meta.py               # MetaCycle: high-level strategy & goal alignment
+│   │   ├── macro.py              # MacroCycle: workflow orchestration & milestone tracking
+│   │   ├── meso.py               # MesoCycle: context-bound execution & tool sequence management
+│   │   └── micro.py              # MicroCycle: atomic visual/text actions & turn evaluation gates
+│   └── adapters/
+│       ├── __init__.py
+│       ├── base.py               # BaseAdapter abstract class
+│       ├── openclaw.py           # Prism Refraction & OpenClaw state engine adapter
+│       ├── hermes.py             # Hermes / Console reasoning harness adapter
+│       └── windows_os.py         # Windows OS Agent desktop UI controller adapter
+├── tests/
+│   ├── __init__.py
+│   ├── test_dispatcher.py        # State transition & loop lifecycle tests
+│   ├── test_tiers.py             # Hierarchical abstraction tier interaction tests
+│   ├── test_meta_skills.py       # Checkpointing, backtracking, and self-critique tests
+│   └── test_adapters.py          # Platform adapter integration tests
+├── .gitignore                    # Python & Antigravity artifact exclusion rules
+├── pyproject.toml                # Build configuration and dependencies
+└── README.md                     # Project entry point and technical overview
+```
+
+---
+
+## Detailed Components to Implement
+
+### 1. Antigravity v2 System Rules & Workflows (`.antigravity/`)
+- `rules.md`: Formats rules for Classic IDE setup. Defines role definitions for:
+  - **Perception Agent (Right Hemisphere / System 1)**: High temp hypothesis generator & context extractor.
+  - **Deliberation Agent (Left Hemisphere / System 2)**: Low temp constraint solver & truth table evaluator.
+  - **Synthesis Agent (Corpus Callosum / Aggregator)**: Conflict resolution & state synthesizer.
+- `workflows/cognition_cycle.yaml`: Pipeline defining artifact flow through Perception -> Deliberation -> Synthesis with validation schemas.
+
+### 2. Core Engine & State Dispatcher (`src/core/`)
+- `types.py`: Defines enums (`CyclePhase`, `CycleTier`, `CycleStatus`) and Pydantic models (`StateContext`, `CritiqueResult`, `Checkpoint`, `ActionPayload`).
+- `dispatcher.py`: `CycleDispatcher` orchestrates state transitions:
+  1. **Perception**: Extracts signals, parses environment context.
+  2. **Planning**: Formulates strategy, selects path based on tier.
+  3. **Execution**: Dispatches actions to adapters.
+  4. **Reflection**: Invokes self-critique; if score below threshold, triggers backtracking to checkpoint.
+- `state.py`: `CheckpointManager` maintains step history, creates snapshots before micro/meso cycles, enables point-in-time rewind.
+- `critique.py`: `SelfCritiqueEngine` checks output against rules and goals.
+
+### 3. Hierarchical Abstraction Tiers (`src/cycles/`)
+- `base.py`: `BaseCycle` defining execution lifecycle (`perceive`, `plan`, `execute`, `reflect`).
+- `meta.py`, `macro.py`, `meso.py`, `micro.py`: Specialized cycle implementations handling nested cycle delegation from Meta down to Micro.
+
+### 4. Target Platform Integration Adapters (`src/adapters/`)
+- `base.py`: `BaseAdapter` interface with `execute_action`, `perceive_environment`, `get_capabilities`.
+- `openclaw.py`: Prism Refraction & OpenClaw adapter for state routing.
+- `hermes.py`: Hermes / Console backend reasoning harness adapter.
+- `windows_os.py`: Desktop automation adapter for screen state verification.
+
+### 5. Configuration, Docs, Tests & Tooling
+- Configuration in `config/settings.yaml`.
+- Architectural diagrams and guides in `docs/`.
+- Complete Pytest suite covering dispatcher, tiers, checkpointing/backtracking, critique, and adapters.
+- Git initialization (`git init`, `git add .`, commit) in `d:\Projects\cognition_cycles`.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- Run `pytest` to execute all unit tests:
+  ```powershell
+  python -m pytest tests/ -v
+  ```
+
+### Manual Verification & Checks
+- Verify file structure matches requirements.
+- Verify git repository is initialized with main branch and clean working tree.
+- Validate Python typing and YAML configuration parsing.

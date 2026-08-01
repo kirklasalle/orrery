@@ -1,0 +1,51 @@
+name: cognition_cycle_v2
+version: "2.0.0"
+description: "Antigravity v2 cognitive cycle orchestration workflow (Perception -> Deliberation -> Synthesis)"
+
+stages:
+  - id: perception
+    name: "Perception Phase (System 1)"
+    agent_role: "PerceptionAgent"
+    temperature: 0.7
+    inputs:
+      - raw_environment_signal
+      - active_goal
+    outputs:
+      - candidate_hypotheses
+      - parsed_context
+    validation:
+      required_fields: ["candidate_hypotheses", "parsed_context"]
+
+  - id: deliberation
+    name: "Deliberation Phase (System 2)"
+    agent_role: "DeliberationAgent"
+    temperature: 0.1
+    inputs:
+      - candidate_hypotheses
+      - parsed_context
+      - constraint_rules
+    outputs:
+      - critique_table
+      - verified_candidates
+      - risk_assessment
+    validation:
+      min_score_threshold: 0.70
+
+  - id: synthesis
+    name: "Synthesis & Action Phase (Corpus Callosum)"
+    agent_role: "SynthesisAgent"
+    temperature: 0.3
+    inputs:
+      - verified_candidates
+      - critique_table
+    outputs:
+      - unified_action_plan
+      - checkpoint_id
+    post_execution:
+      checkpoint_state: true
+      enable_backtracking: true
+
+reflection_gate:
+  evaluator: "SelfCritiqueEngine"
+  max_backtrack_attempts: 3
+  threshold: 0.70

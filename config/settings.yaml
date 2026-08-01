@@ -1,0 +1,48 @@
+app:
+  name: "Cognition Cycles Framework"
+  version: "0.1.0"
+  environment: "development"
+
+dispatcher:
+  default_phase: "PERCEPTION"
+  max_cycle_iterations: 50
+  auto_checkpoint: true
+
+tiers:
+  meta:
+    enabled: true
+    timeout_seconds: 300
+  macro:
+    enabled: true
+    timeout_seconds: 120
+  meso:
+    enabled: true
+    timeout_seconds: 60
+  micro:
+    enabled: true
+    timeout_seconds: 15
+
+meta_skills:
+  critique:
+    threshold: 0.70
+    strict_mode: false
+  checkpointing:
+    max_checkpoints_in_memory: 100
+    storage_dir: ".checkpoints"
+  backtracking:
+    max_retries_per_step: 3
+
+adapters:
+  active:
+    - "openclaw"
+    - "hermes"
+    - "windows_os"
+  openclaw:
+    routing_core: "prism_refraction"
+    state_engine: "enabled"
+  hermes:
+    mode: "console"
+    evaluation_gates: true
+  windows_os:
+    screen_state_verification: true
+    action_delay_ms: 100
