@@ -20,7 +20,7 @@ def test_openclaw_adapter():
         action = ActionPayload(action_name="route_task", tier=CycleTier.MACRO)
         receipt = await adapter.execute_action(action)
         assert receipt.success is True
-        assert "OpenClaw" in receipt.output
+        assert "OpenClaw" in str(receipt.output)
 
     asyncio.run(run())
 
@@ -36,7 +36,7 @@ def test_hermes_adapter():
         action = ActionPayload(action_name="evaluate_gate", tier=CycleTier.META)
         receipt = await adapter.execute_action(action)
         assert receipt.success is True
-        assert "Hermes" in receipt.output
+        assert "Hermes" in str(receipt.output)
 
     asyncio.run(run())
 
@@ -52,6 +52,6 @@ def test_windows_os_adapter():
         action = ActionPayload(action_name="click_element", params={"target": "btn_submit"}, tier=CycleTier.MICRO)
         receipt = await adapter.execute_action(action)
         assert receipt.success is True
-        assert "Windows OS Agent" in receipt.output
+        assert "Windows OS Agent" in str(receipt.output)
 
     asyncio.run(run())

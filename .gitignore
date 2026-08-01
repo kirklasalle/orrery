@@ -40,6 +40,7 @@ env/
 # Antigravity artifacts & local checkpoints
 .antigravity/cache/
 .checkpoints/
+.test_checkpoints*/
 *.log
 .pytest_cache/
 .coverage

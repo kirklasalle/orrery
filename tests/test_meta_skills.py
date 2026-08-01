@@ -1,8 +1,9 @@
 """
-Tests for Meta-Skills: Checkpointing, Backtracking, and Self-Critique.
+Tests for Meta-Skills: Checkpointing, Disk Persistence, Backtracking, and Self-Critique.
 """
 
 import asyncio
+from pathlib import Path
 from src.core.types import (
     StateContext,
     CyclePhase,
@@ -17,7 +18,7 @@ from src.core.dispatcher import CycleDispatcher
 
 
 def test_checkpointing_and_restore():
-    manager = CheckpointManager()
+    manager = CheckpointManager(storage_dir=".test_checkpoints")
     context = StateContext(goal="Checkpoint test", tier=CycleTier.MESO)
     context.variables["test_key"] = "test_val"
 
@@ -33,6 +34,30 @@ def test_checkpointing_and_restore():
     assert restored is not None
     assert restored.variables["test_key"] == "test_val"
     assert restored.status == CycleStatus.CHECKPOINTED
+
+
+def test_disk_checkpoint_persistence():
+    storage_dir = ".test_checkpoints_disk"
+    manager = CheckpointManager(storage_dir=storage_dir)
+    context = StateContext(goal="Disk persistence test", tier=CycleTier.MACRO)
+    context.variables["disk_key"] = "saved_on_disk"
+
+    checkpoint = manager.create_checkpoint(context)
+    
+    # Verify file exists on disk
+    expected_path = Path(storage_dir) / context.cycle_id / f"{checkpoint.checkpoint_id}.json"
+    assert expected_path.exists()
+
+    # Clear in-memory cache to force disk load
+    manager._checkpoints.clear()
+    
+    loaded = manager.get_checkpoint(checkpoint.checkpoint_id)
+    assert loaded is not None
+    assert loaded.checkpoint_id == checkpoint.checkpoint_id
+
+    restored = manager.restore_checkpoint(checkpoint.checkpoint_id)
+    assert restored is not None
+    assert restored.variables["disk_key"] == "saved_on_disk"
 
 
 def test_self_critique_evaluation_passed():
@@ -80,13 +105,13 @@ def test_backtracking_trigger_on_failed_reflection():
 
         dispatcher.register_handler(CyclePhase.EXECUTION, failing_execution_handler)
 
-        # Run step 1: PERCEPTION (creates checkpoint) -> PLANNING
+        # Step 1: PERCEPTION (creates checkpoint) -> PLANNING
         context = await dispatcher.step(context)
-        # Run step 2: PLANNING -> EXECUTION
+        # Step 2: PLANNING -> EXECUTION
         context = await dispatcher.step(context)
-        # Run step 3: EXECUTION -> REFLECTION (runs failing execution)
+        # Step 3: EXECUTION -> REFLECTION (runs failing execution)
         context = await dispatcher.step(context)
-        # Run step 4: REFLECTION (critique fails score=0.0 -> triggers backtrack to PLANNING)
+        # Step 4: REFLECTION (critique fails score=0.0 -> triggers backtrack to PLANNING)
         context = await dispatcher.step(context)
 
         assert context.status == CycleStatus.BACKTRACKING

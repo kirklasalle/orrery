@@ -5,6 +5,7 @@ Macro-Cycle Abstraction Tier.
 from typing import Optional
 from src.core.types import StateContext, CycleTier, CyclePhase, ActionPayload, ExecutionReceipt
 from src.cycles.base import BaseCycle
+from src.cycles.meso import MesoCycle
 
 
 class MacroCycle(BaseCycle):
@@ -36,6 +37,8 @@ class MacroCycle(BaseCycle):
 
     async def execute(self, context: Optional[StateContext] = None) -> StateContext:
         ctx = context or self.context
+        
+        # 1. Execute macro milestone action
         for action in ctx.planned_actions:
             if not any(r.action_id == action.action_id for r in ctx.execution_receipts):
                 ctx.execution_receipts.append(
@@ -46,6 +49,11 @@ class MacroCycle(BaseCycle):
                         output=f"[MACRO] Executed milestone {action.action_name}",
                     )
                 )
+
+        # 2. Delegate tool execution loop to child MesoCycle
+        meso_child = MesoCycle()
+        await self.delegate_to_child(meso_child)
+
         self.context = ctx
         return ctx
 

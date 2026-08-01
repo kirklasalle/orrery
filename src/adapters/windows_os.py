@@ -3,6 +3,7 @@ Windows OS Desktop Automation Agent Adapter.
 """
 
 from typing import Any, Dict, Optional
+import asyncio
 from src.core.types import ActionPayload, ExecutionReceipt, StateContext
 from src.adapters.base import BaseAdapter
 
@@ -16,20 +17,34 @@ class WindowsOSAdapter(BaseAdapter):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(name="windows_os", config=config)
         self.verify_screen_state = self.config.get("screen_state_verification", True)
+        self.action_delay_ms = self.config.get("action_delay_ms", 10)
 
     async def perceive_environment(self, context: StateContext) -> Dict[str, Any]:
         return {
             "platform": "Windows OS",
             "screen_state": "focused",
             "active_window": "CognitionCycles Desktop Controller",
+            "display_resolution": "1920x1080",
+            "verification_active": self.verify_screen_state,
         }
 
     async def execute_action(self, action: ActionPayload) -> ExecutionReceipt:
         target = action.params.get("target", "desktop_ui")
-        output_msg = f"[Windows OS Agent] Executed UI action '{action.action_name}' on target '{target}'."
+        
+        # Simulate OS interaction delay if specified
+        if self.action_delay_ms > 0:
+            await asyncio.sleep(self.action_delay_ms / 1000.0)
+
+        screen_delta_verified = True if self.verify_screen_state else False
+        output_msg = f"[Windows OS Agent] Executed action '{action.action_name}' on target '{target}'."
+        
         return ExecutionReceipt(
             action_id=action.action_id,
             action_name=action.action_name,
             success=True,
-            output=output_msg,
+            output={
+                "message": output_msg,
+                "target": target,
+                "screen_delta_verified": screen_delta_verified,
+            },
         )

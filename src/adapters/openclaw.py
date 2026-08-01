@@ -16,21 +16,35 @@ class OpenClawAdapter(BaseAdapter):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(name="openclaw", config=config)
         self.routing_core = self.config.get("routing_core", "prism_refraction")
+        self.state_engine = self.config.get("state_engine", "enabled")
 
     async def perceive_environment(self, context: StateContext) -> Dict[str, Any]:
         return {
             "platform": "OpenClaw",
             "routing_core": self.routing_core,
-            "active_cycle_tier": context.tier,
+            "state_engine": self.state_engine,
+            "active_cycle_tier": context.tier.value,
             "status": "ready",
         }
 
     async def execute_action(self, action: ActionPayload) -> ExecutionReceipt:
-        # Simulate Prism Refraction dispatching
+        headers = self._build_protocol_headers(action)
         output_msg = f"[OpenClaw/{self.routing_core}] Dispatched action '{action.action_name}' successfully."
+        
         return ExecutionReceipt(
             action_id=action.action_id,
             action_name=action.action_name,
             success=True,
-            output=output_msg,
+            output={
+                "message": output_msg,
+                "protocol_headers": headers,
+                "routing_status": "OK",
+            },
         )
+
+    def _build_protocol_headers(self, action: ActionPayload) -> Dict[str, str]:
+        return {
+            "X-OpenClaw-Routing": self.routing_core,
+            "X-Cognition-Tier": action.tier.value,
+            "X-Action-ID": action.action_id,
+        }

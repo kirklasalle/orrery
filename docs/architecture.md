@@ -1,69 +1,79 @@
 # Cognition Cycles Architecture Specification
 
-## Overview
-
-**Cognition Cycles** ("outgrowing the basic loop") is an agentic framework and orchestration paradigm designed to replace single-step ReAct loops ($\text{Prompt} \rightarrow \text{Tool Call} \rightarrow \text{Observation} \rightarrow \text{Answer}$) with stateful, multi-tier cognitive state loops.
-
----
-
-## 1. Cycle Dispatcher (Multi-Stage State Machine)
-
-The `CycleDispatcher` orchestrates structured transitions across four core phases:
-
-```
-┌─────────────────┐       ┌─────────────────┐
-│   PERCEPTION    │ ────> │    PLANNING     │
-└─────────────────┘       └─────────────────┘
-         ▲                         │
-         │                         ▼
-┌─────────────────┐       ┌─────────────────┐
-│   REFLECTION    │ <──── │    EXECUTION    │
-└─────────────────┘       └─────────────────┘
-```
-
-1. **Perception**: Sensing the environment, parsing inputs, extracting context signals, and generating candidate hypotheses (System 1).
-2. **Planning**: Decomposing goals into structured strategies, scoring candidate hypotheses, evaluating constraints, and building action steps (System 2).
-3. **Execution**: Dispatching atomic tool calls, shell actions, or platform commands through specialized integration adapters.
-4. **Reflection**: Evaluating outcome quality via `SelfCritiqueEngine`. If verification score $\ge \theta_{\text{critique}}$, the cycle completes or advances. If score $< \theta_{\text{critique}}$, state rolls back to the previous checkpoint via `CheckpointManager` and triggers backtracking.
+> **Version:** 1.0.0  
+> **Status:** Production Architecture
 
 ---
 
-## 2. Hierarchical Abstraction Tiers
+## 1. Executive System Overview
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ META-CYCLES (High-Level Strategy & Goal Alignment)          │
-├─────────────────────────────────────────────────────────────┤
-│  └─> MACRO-CYCLES (Multi-Step Workflow Orchestration)       │
-├─────────────────────────────────────────────────────────────┤
-│       └─> MESO-CYCLES (Context-Bound Tool Execution Loops)   │
-├─────────────────────────────────────────────────────────────┤
-│            └─> MICRO-CYCLES (Atomic Turn Evaluation Gates)  │
-└─────────────────────────────────────────────────────────────┘
-```
-
-- **Meta-Cycles**: Long-term strategy, overall system goal alignment, cross-agent coordination, and meta-learning state evolution.
-- **Macro-Cycles**: Multi-step workflow planning, major milestone tracking, sub-task breakdown, and component-level sequencing.
-- **Meso-Cycles**: Operational domain logic, tool sequence management, stateful context isolation, and localized error handling.
-- **Micro-Cycles**: Fine-grained atomic actions, turn-fixed evaluation gates, visual/text observation verification, and instant rewind capability.
+**Cognition Cycles** ("outgrowing the basic loop") is an enterprise agentic framework designed to replace single-step ReAct loops ($\text{Prompt} \rightarrow \text{Tool Call} \rightarrow \text{Observation} \rightarrow \text{Answer}$) with stateful, multi-tier cognitive state loops.
 
 ---
 
-## 3. Built-in Meta-Skills
+## 2. Multi-Stage State Machine Dispatcher
 
-### Agent Self-Critique
-Automated evaluation gates evaluate plan quality and execution fidelity prior to completing cycles or producing terminal output. Outputs numerical scores ($0.0 - 1.0$) and actionable feedback.
+The `CycleDispatcher` manages state transitions across four core phases:
 
-### State Checkpointing
-Full snapshotting of cycle state (`StateContext`), including memory parameters, open handles, phase indicators, and execution stack trace. Checkpoints can be committed at any phase boundary.
+```
+┌─────────────────────────┐         ┌─────────────────────────┐
+│       PERCEPTION        │ ──────> │        PLANNING         │
+│  (System 1 / Temp 0.7)  │         │  (System 2 / Temp 0.1)  │
+└─────────────────────────┘         └─────────────────────────┘
+             ▲                                   │
+             │ (Automated Backtrack Rewind)      ▼
+┌─────────────────────────┐         ┌─────────────────────────┐
+│       REFLECTION        │ <────── │        EXECUTION        │
+│  (Critique Gate >= 0.7) │         │    (Adapter Actions)    │
+└─────────────────────────┘         └─────────────────────────┘
+```
 
-### Backtracking
-Automatic recovery mechanism. When an execution phase fails reflection or hits an unrecoverable constraint error, the state machine unwinds to the most recent safe checkpoint, modifies the strategy context, and re-plans without losing high-level macro history.
+1. **Perception**: sensing environmental state, parsing inputs, extracting context signals, and generating candidate hypotheses (System 1).
+2. **Planning**: formulating strategic goal paths, evaluating constraints against truth tables, and constructing `ActionPayload` objects (System 2).
+3. **Execution**: dispatching payloads to target adapters and gathering `ExecutionReceipt` objects.
+4. **Reflection**: evaluating execution results via `SelfCritiqueEngine`. If score $\ge \theta_{\text{critique}} = 0.70$, cycle advances to completion. If score $< \theta_{\text{critique}}$, state rewinds to the active checkpoint and triggers backtracking.
 
 ---
 
-## 4. Platform Adapters
+## 3. Hierarchical Abstraction Tiers & Nested Delegation
 
-- **OpenClaw Adapter**: Interfaces with OpenClaw and Prism Refraction routing core and state engine.
-- **Hermes Adapter**: Interfaces with Hermes backend reasoning harness and console evaluation gates.
-- **Windows OS Adapter**: Executive desktop automation adapter for screen state verification and UI element interactions.
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ META-CYCLES (High-Level Strategy, Goal Alignment & Cross-Agent Governance)   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  └─> MACRO-CYCLES (Multi-Step Milestone Orchestration & Sub-Task Sequences)│
+├─────────────────────────────────────────────────────────────────────────────┤
+│       └─> MESO-CYCLES (Context-Bound Execution Loops & Tool Management)     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│            └─> MICRO-CYCLES (Fine-Grained Atomic UI Actions & Turn Gates)  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Meta-Cycles**: Manage high-level strategy and agent goal alignment. Invokes child `MacroCycle` instances via `delegate_to_child()`.
+- **Macro-Cycles**: Manage multi-step workflow orchestration. Invokes child `MesoCycle` instances.
+- **Meso-Cycles**: Manage operational tool execution loops. Invokes child `MicroCycle` instances.
+- **Micro-Cycles**: Perform atomic tool interactions, shell execution, or screen state verification.
+
+---
+
+## 4. Built-in Meta-Skills
+
+### 4.1 Disk-Backed State Checkpointing
+- Snapshots immutable `StateContext` objects before phase transitions.
+- Persists JSON metadata to `.checkpoints/<cycle_id>/<checkpoint_id>.json` for cross-process session restores.
+
+### 4.2 Automated Backtracking
+- Rewinds execution back to the `PLANNING` phase of the safe checkpoint when reflection fails.
+- Increments `backtrack_count` and modifies strategy context to guarantee convergence.
+
+### 4.3 Agent Self-Critique
+- Computes numerical scores ($0.0 - 1.0$) based on action success ratios and policy invariants.
+- Emits actionable recommendations for plan revision upon failure.
+
+---
+
+## 5. Integration Adapters
+
+- **[OpenClawAdapter](file:///d:/Projects/cognition_cycles/src/adapters/openclaw.py)**: Interoperates with Prism Refraction routing core and OpenClaw state engine.
+- **[HermesAdapter](file:///d:/Projects/cognition_cycles/src/adapters/hermes.py)**: Interoperates with Hermes reasoning harness and console evaluation gates.
+- **[WindowsOSAdapter](file:///d:/Projects/cognition_cycles/src/adapters/windows_os.py)**: Interoperates with Windows OS Agent for desktop UI state verification.
