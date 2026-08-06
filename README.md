@@ -15,11 +15,13 @@ An orrery is a clockwork model of nested orbits turning at different periods —
 >
 > This repository is a **working architectural scaffold**, not a production system. Read this before evaluating:
 >
-> - The three integration adapters are **simulations**. They perform no network, LLM, or OS calls.
-> - All execution handlers currently report unconditional success, so the reflection gate and
->   backtracking machinery are **not exercised by any production code path**.
-> - Per-tier timeouts and iteration caps are declared in [config/settings.yaml](config/settings.yaml)
->   but are **not yet loaded or enforced**.
+> - The three bundled adapters are **simulations**. They perform no network, LLM, or OS calls, and
+>   declare themselves via `is_simulation`. Registering one logs a warning and tags every receipt
+>   with `simulated: True`. **You must supply a real adapter to do real work.**
+> - An action with no registered adapter now produces a **failed** receipt rather than a fabricated
+>   successful one, so an unwired framework reports failure instead of silent success.
+> - Governance: the Prime Directive and Sacred Covenant are **declarative only**. No Law is enforced
+>   at runtime yet. Checkpoints are unsigned and not hash-chained.
 >
 > A full technical and governance audit — including reproduced defects, severity ratings, and a
 > sequenced remediation plan — is published at [docs/audit_2026-08-06.md](docs/audit_2026-08-06.md).

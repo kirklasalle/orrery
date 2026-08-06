@@ -96,6 +96,9 @@ class CheckpointManager:
     def backtrack(self, context: StateContext) -> StateContext:
         """
         Rewinds the context state to the most recent valid checkpoint for the cycle.
+
+        Rollback rewinds work, never the record of it: the step counter, lessons, and
+        attempt log survive so the next attempt is informed rather than identical.
         """
         history = self._cycle_history.get(context.cycle_id, [])
         if not history:
@@ -108,7 +111,10 @@ class CheckpointManager:
             context.status = CycleStatus.FAILED
             return context
 
+        restored.step_count = max(restored.step_count, context.step_count)
         restored.backtrack_count = context.backtrack_count + 1
+        restored.lessons = list(context.lessons)
+        restored.attempt_log = list(context.attempt_log)
         restored.status = CycleStatus.BACKTRACKING
         restored.current_phase = CyclePhase.PLANNING  # Re-route to planning phase
         return restored

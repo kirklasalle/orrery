@@ -3,7 +3,7 @@ Meso-Cycle Abstraction Tier.
 """
 
 from typing import Optional
-from orrery.core.types import StateContext, CycleTier, CyclePhase, ActionPayload, ExecutionReceipt
+from orrery.core.types import StateContext, CycleTier, CyclePhase, ActionPayload
 from orrery.cycles.base import BaseCycle
 from orrery.cycles.micro import MicroCycle
 
@@ -37,18 +37,9 @@ class MesoCycle(BaseCycle):
 
     async def execute(self, context: Optional[StateContext] = None) -> StateContext:
         ctx = context or self.context
-        
+
         # 1. Execute meso tool sequence action
-        for action in ctx.planned_actions:
-            if not any(r.action_id == action.action_id for r in ctx.execution_receipts):
-                ctx.execution_receipts.append(
-                    ExecutionReceipt(
-                        action_id=action.action_id,
-                        action_name=action.action_name,
-                        success=True,
-                        output=f"[MESO] Dispatched tool sequence {action.action_name}",
-                    )
-                )
+        ctx = await self.dispatch_actions(ctx)
 
         # 2. Delegate atomic action to child MicroCycle
         micro_child = MicroCycle()

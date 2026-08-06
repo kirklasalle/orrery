@@ -23,11 +23,13 @@ Traditional AI agent frameworks operate on single-turn ReAct loops ($\text{Promp
 - **Platform Agnostic Execution**: Supply extensible adapter interfaces for cloud task routing, LLM reasoning harnesses, and desktop UI automation.
 - **Engineering Baseline**: Typed Pydantic contracts, asynchronous execution, and a maintained test suite.
 
-> **Implementation status (August 6, 2026).** This document describes the target design. It is not a
-> description of current behavior. As of this revision the shipped adapters are simulations that perform
-> no real I/O, and the reflection/backtracking gate is not exercised by any production code path because
-> all execution handlers report unconditional success. See [audit_2026-08-06.md](audit_2026-08-06.md)
-> for the full gap analysis and remediation gates.
+> **Implementation status (August 6, 2026).** This document describes the target design. As of Gate 1
+> of the remediation plan, execution is honest: actions are routed to registered adapters, an action
+> with no adapter yields a failed receipt, per-tier timeouts and step budgets are loaded from
+> [../config/settings.yaml](../config/settings.yaml) and enforced, and backtracking carries lessons
+> forward so retries differ from the attempt that failed. The bundled adapters remain **simulations**
+> that perform no real I/O, and no governance Law is enforced at runtime. See
+> [audit_2026-08-06.md](audit_2026-08-06.md) for the full gap analysis and remaining gates.
 
 ---
 
@@ -99,7 +101,7 @@ Each cycle step transitions deterministically through four phases:
 ## 7. Non-Functional & Quality Requirements
 
 - **Python Compatibility**: Python 3.10+ (verified against 3.10 via the repository `.venv`).
-- **Test Coverage**: **Measured 86% line coverage of `orrery/`** (564 statements, 51 tests) as of August 6, 2026. Target: $\geq 90\%$, with behavioral assertions rather than line execution alone.
+- **Test Coverage**: **Measured 87% line coverage of `orrery/`** (708 statements, 59 tests) as of August 6, 2026. Target: $\geq 90\%$, with behavioral assertions rather than line execution alone.
 - **Async Execution**: Non-blocking `async/await` throughout all phase handlers and cycle runners.
 - **Code Quality**: Strict type hint enforcement, Pydantic v2 validation, zero global state mutations.
 - **Path Safety**: All checkpoint identifiers are validated as canonical UUIDs and all checkpoint I/O is confined to the configured storage root.

@@ -2,7 +2,7 @@
 Prism Refraction & OpenClaw Platform Adapter.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, ClassVar, Dict, Optional
 from orrery.core.types import ActionPayload, ExecutionReceipt, StateContext
 from orrery.adapters.base import BaseAdapter
 
@@ -11,7 +11,11 @@ class OpenClawAdapter(BaseAdapter):
     """
     Adapter interfacing with Prism Refraction routing core and OpenClaw state engine.
     Dispatches tasks from Meta-Cycles to Micro-Cycles with full checkpointing.
+
+    SIMULATION: performs no network or routing-core I/O.
     """
+
+    is_simulation: ClassVar[bool] = True
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(name="openclaw", config=config)

@@ -73,6 +73,22 @@ class CritiqueResult(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
+class AttemptRecord(BaseModel):
+    """
+    One failed attempt, retained across rollback so the planner can see what was already tried.
+    """
+
+    attempt: int
+    step_number: int
+    tier: CycleTier
+    score: float
+    reasoning: str
+    attempted_actions: List[str] = Field(default_factory=list)
+    failed_actions: List[str] = Field(default_factory=list)
+    recommendations: List[str] = Field(default_factory=list)
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
 class Checkpoint(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
@@ -108,6 +124,10 @@ class StateContext(BaseModel):
     step_count: int = 0
     backtrack_count: int = 0
     max_backtracks: int = 3
+
+    # Carried across rollback so retries are informed rather than identical.
+    lessons: List[str] = Field(default_factory=list)
+    attempt_log: List[AttemptRecord] = Field(default_factory=list)
 
     _check_cycle_id = field_validator("cycle_id")(validate_identifier)
 

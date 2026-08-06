@@ -2,7 +2,7 @@
 Hermes / Console Backend Reasoning Harness Adapter.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, ClassVar, Dict, Optional
 from orrery.core.types import ActionPayload, ExecutionReceipt, StateContext, CritiqueResult
 from orrery.adapters.base import BaseAdapter
 
@@ -11,7 +11,11 @@ class HermesAdapter(BaseAdapter):
     """
     Adapter interfacing with Hermes / Console backend reasoning harness.
     Provides prompt formatting, evaluation gates, and self-critique prior to terminal execution.
+
+    SIMULATION: performs no network, LLM, or console I/O.
     """
+
+    is_simulation: ClassVar[bool] = True
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(name="hermes", config=config)

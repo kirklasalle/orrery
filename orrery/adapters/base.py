@@ -3,7 +3,7 @@ Base Adapter Abstract Interface.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, ClassVar, Dict, Optional
 from orrery.core.types import ActionPayload, ExecutionReceipt, StateContext
 
 
@@ -11,6 +11,9 @@ class BaseAdapter(ABC):
     """
     Abstract Base Class for external environment and platform adapters.
     """
+
+    # True when the adapter fabricates results instead of touching a real system.
+    is_simulation: ClassVar[bool] = False
 
     def __init__(self, name: str, config: Optional[Dict[str, Any]] = None):
         self.name = name
