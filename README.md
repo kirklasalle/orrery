@@ -20,8 +20,12 @@ An orrery is a clockwork model of nested orbits turning at different periods —
 >   with `simulated: True`. **You must supply a real adapter to do real work.**
 > - An action with no registered adapter now produces a **failed** receipt rather than a fabricated
 >   successful one, so an unwired framework reports failure instead of silent success.
-> - Governance: the Prime Directive and Sacred Covenant are **declarative only**. No Law is enforced
->   at runtime yet. Checkpoints are unsigned and not hash-chained.
+> - Governance: **5 of the 10 Laws have no runtime control.** Laws 6, 7, 9, and 10 do — data-path
+>   containment, no fabricated success, an append-only hash-linked ledger, and authorized,
+>   depth-and-budget-bounded delegation. What is and is not enforced, and by which test, is
+>   documented in [GOVERNANCE.md](GOVERNANCE.md) and gated in CI.
+> - Checkpoints are hash-chained and verified on load. Signing is available via
+>   `ORRERY_CHECKPOINT_KEY` but is **off by default**, and uses a shared symmetric key.
 >
 > A full technical and governance audit — including reproduced defects, severity ratings, and a
 > sequenced remediation plan — is published at [docs/audit_2026-08-06.md](docs/audit_2026-08-06.md).

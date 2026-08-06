@@ -14,8 +14,8 @@ class MetaCycle(BaseCycle):
     agent goal alignment, and cross-agent coordination.
     """
 
-    def __init__(self, context: Optional[StateContext] = None):
-        super().__init__(tier=CycleTier.META, context=context)
+    def __init__(self, context: Optional[StateContext] = None, **kwargs):
+        super().__init__(tier=CycleTier.META, context=context, **kwargs)
 
     async def perceive(self, context: Optional[StateContext] = None) -> StateContext:
         ctx = context or self.context
@@ -43,7 +43,7 @@ class MetaCycle(BaseCycle):
         ctx = await self.dispatch_actions(ctx)
 
         # 2. Delegate workflow execution to child MacroCycle
-        macro_child = MacroCycle()
+        macro_child = self.spawn_child(MacroCycle)
         await self.delegate_to_child(macro_child)
 
         self.context = ctx

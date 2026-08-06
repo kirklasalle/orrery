@@ -101,7 +101,7 @@ Each cycle step transitions deterministically through four phases:
 ## 7. Non-Functional & Quality Requirements
 
 - **Python Compatibility**: Python 3.10+ (verified against 3.10 via the repository `.venv`).
-- **Test Coverage**: **Measured 87% line coverage of `orrery/`** (708 statements, 59 tests) as of August 6, 2026. Target: $\geq 90\%$, with behavioral assertions rather than line execution alone.
+- **Test Coverage**: **Measured 89% line coverage of `orrery/`** (1085 statements, 113 tests) as of August 6, 2026. Target: $\geq 90\%$, with behavioral assertions rather than line execution alone.
 - **Async Execution**: Non-blocking `async/await` throughout all phase handlers and cycle runners.
 - **Code Quality**: Strict type hint enforcement, Pydantic v2 validation, zero global state mutations.
 - **Path Safety**: All checkpoint identifiers are validated as canonical UUIDs and all checkpoint I/O is confined to the configured storage root.

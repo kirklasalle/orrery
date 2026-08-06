@@ -13,8 +13,8 @@ class MicroCycle(BaseCycle):
     and visual/text observation verification.
     """
 
-    def __init__(self, context: Optional[StateContext] = None):
-        super().__init__(tier=CycleTier.MICRO, context=context)
+    def __init__(self, context: Optional[StateContext] = None, **kwargs):
+        super().__init__(tier=CycleTier.MICRO, context=context, **kwargs)
 
     async def perceive(self, context: Optional[StateContext] = None) -> StateContext:
         ctx = context or self.context

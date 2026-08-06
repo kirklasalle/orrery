@@ -17,6 +17,7 @@ from orrery.core.types import (
 )
 from orrery.core.state import CheckpointManager
 from orrery.core.critique import SelfCritiqueEngine
+from orrery.core.ledger import EventLedger
 
 if TYPE_CHECKING:
     from orrery.adapters.base import BaseAdapter
@@ -38,14 +39,22 @@ class CycleDispatcher:
         checkpoint_manager: Optional[CheckpointManager] = None,
         critique_engine: Optional[SelfCritiqueEngine] = None,
         settings: Optional[Settings] = None,
+        ledger: Optional[EventLedger] = None,
     ):
         self.settings = settings or get_settings()
         self.checkpoint_manager = checkpoint_manager or CheckpointManager(
             max_checkpoints=self.settings.checkpointing.max_checkpoints_in_memory,
             storage_dir=self.settings.checkpointing.storage_dir,
+            max_checkpoints_on_disk_per_cycle=self.settings.checkpointing.max_checkpoints_on_disk_per_cycle,
+            verify_on_load=self.settings.integrity.verify_on_load,
+            require_signature=self.settings.integrity.require_signature,
         )
         self.critique_engine = critique_engine or SelfCritiqueEngine(
             threshold=self.settings.critique.threshold
+        )
+        self.ledger = ledger or EventLedger(
+            storage_dir=self.settings.ledger.storage_dir,
+            persist=self.settings.ledger.persist,
         )
         self._adapters: Dict[str, "BaseAdapter"] = {}
         self._phase_handlers: Dict[CyclePhase, PhaseHandler] = {}
@@ -81,14 +90,22 @@ class CycleDispatcher:
                 )
             logger.warning("Adapter %r is a SIMULATION: its receipts describe no real work.", key)
         self._adapters[key] = adapter
+        self.ledger.append(
+            "adapter.registered",
+            summary=f"Adapter {key!r} registered.",
+            policy_id="LAW7-SIM",
+            adapter=key,
+            is_simulation=bool(getattr(adapter, "is_simulation", False)),
+        )
 
     def share_runtime_with(self, other: "CycleDispatcher") -> None:
         """
-        Gives another dispatcher this one's checkpoint lineage, critique engine, and adapters,
-        so a cycle tree can be rewound and audited as a single unit.
+        Gives another dispatcher this one's checkpoint lineage, critique engine, ledger,
+        and adapters, so a cycle tree can be rewound and audited as a single unit.
         """
         other.checkpoint_manager = self.checkpoint_manager
         other.critique_engine = self.critique_engine
+        other.ledger = self.ledger
         for key, adapter in self._adapters.items():
             other._adapters.setdefault(key, adapter)
 
@@ -106,6 +123,14 @@ class CycleDispatcher:
             raise ValueError(f"No handler registered for phase: {current_phase}")
 
         logger.info(f"[Cycle {context.cycle_id}] Entering phase: {current_phase} (Tier: {context.tier})")
+        self.ledger.append(
+            "cycle.phase_entered",
+            summary=f"Entered {current_phase.value}.",
+            cycle_id=context.cycle_id,
+            tier=context.tier.value,
+            policy_id="LAW9-LEDGER",
+            step=context.step_count,
+        )
 
         # Create checkpoint before transition if executing or planning
         if self.settings.dispatcher.auto_checkpoint and current_phase in (
@@ -126,6 +151,15 @@ class CycleDispatcher:
             updated_context.current_phase = CyclePhase.REFLECTION
         elif current_phase == CyclePhase.REFLECTION:
             critique = updated_context.critiques[-1] if updated_context.critiques else CritiqueResult(score=1.0, passed=True)
+            self.ledger.append(
+                "critique.evaluated",
+                summary=critique.reasoning,
+                cycle_id=context.cycle_id,
+                tier=context.tier.value,
+                policy_id="LAW9-LEDGER",
+                score=critique.score,
+                passed=critique.passed,
+            )
             if critique.passed:
                 updated_context.status = CycleStatus.COMPLETED
             else:
@@ -134,6 +168,16 @@ class CycleDispatcher:
                 if updated_context.backtrack_count < updated_context.max_backtracks:
                     logger.warning(f"[Cycle {context.cycle_id}] Reflection score low ({critique.score}). Triggering backtrack.")
                     updated_context = self.checkpoint_manager.backtrack(updated_context)
+                    # Rollback rewinds state; the ledger records that it happened.
+                    self.ledger.append(
+                        "cycle.backtracked",
+                        summary=f"Rolled back after scoring {critique.score:.2f}.",
+                        cycle_id=context.cycle_id,
+                        tier=context.tier.value,
+                        policy_id="LAW9-APPEND",
+                        attempt=updated_context.backtrack_count,
+                        restored_checkpoint=updated_context.active_checkpoint_id,
+                    )
                 else:
                     logger.error(f"[Cycle {context.cycle_id}] Max backtracks reached. Marking cycle as FAILED.")
                     updated_context.status = CycleStatus.FAILED
@@ -188,7 +232,20 @@ class CycleDispatcher:
         for action in context.planned_actions:
             if any(r.action_id == action.action_id for r in context.execution_receipts):
                 continue
-            context.execution_receipts.append(await self.execute_action(action))
+            receipt = await self.execute_action(action)
+            context.execution_receipts.append(receipt)
+            self.ledger.append(
+                "action.executed" if receipt.success else "action.failed",
+                summary=f"{action.action_name} via {action.target_adapter}: "
+                + ("succeeded" if receipt.success else receipt.error or "failed"),
+                cycle_id=context.cycle_id,
+                tier=context.tier.value,
+                policy_id="LAW9-LEDGER",
+                action_id=action.action_id,
+                action_name=action.action_name,
+                adapter=action.target_adapter,
+                success=receipt.success,
+            )
         return context
 
     async def execute_action(self, action: ActionPayload) -> ExecutionReceipt:

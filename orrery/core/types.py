@@ -100,6 +100,11 @@ class Checkpoint(BaseModel):
     state_data: Dict[str, Any]
     step_number: int = 0
 
+    # Tamper-evidence: each checkpoint digests its own content and names its predecessor.
+    prev_hash: Optional[str] = None
+    content_hash: Optional[str] = None
+    signature: Optional[str] = None
+
     _check_ids = field_validator("checkpoint_id", "cycle_id")(validate_identifier)
 
 

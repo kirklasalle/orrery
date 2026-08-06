@@ -14,8 +14,8 @@ class MacroCycle(BaseCycle):
     and major milestone tracking.
     """
 
-    def __init__(self, context: Optional[StateContext] = None):
-        super().__init__(tier=CycleTier.MACRO, context=context)
+    def __init__(self, context: Optional[StateContext] = None, **kwargs):
+        super().__init__(tier=CycleTier.MACRO, context=context, **kwargs)
 
     async def perceive(self, context: Optional[StateContext] = None) -> StateContext:
         ctx = context or self.context
@@ -42,7 +42,7 @@ class MacroCycle(BaseCycle):
         ctx = await self.dispatch_actions(ctx)
 
         # 2. Delegate tool execution loop to child MesoCycle
-        meso_child = MesoCycle()
+        meso_child = self.spawn_child(MesoCycle)
         await self.delegate_to_child(meso_child)
 
         self.context = ctx

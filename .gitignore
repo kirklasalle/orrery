@@ -41,6 +41,7 @@ env/
 .antigravity/cache/
 .checkpoints/
 .test_checkpoints*/
+.ledger/
 *.log
 .pytest_cache/
 .coverage

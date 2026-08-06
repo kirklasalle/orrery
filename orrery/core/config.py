@@ -38,7 +38,25 @@ class CritiqueSettings(BaseModel):
 
 class CheckpointSettings(BaseModel):
     max_checkpoints_in_memory: int = 100
+    max_checkpoints_on_disk_per_cycle: int = 50
     storage_dir: str = ".checkpoints"
+
+
+class IntegritySettings(BaseModel):
+    verify_on_load: bool = True
+    require_signature: bool = False
+
+
+class DelegationSettings(BaseModel):
+    max_depth: int = 4
+    max_children_per_cycle: int = 8
+    max_total_cycles: int = 32
+    enforce_tier_descent: bool = True
+
+
+class LedgerSettings(BaseModel):
+    persist: bool = True
+    storage_dir: str = ".ledger"
 
 
 class BacktrackingSettings(BaseModel):
@@ -49,6 +67,9 @@ class Settings(BaseModel):
     dispatcher: DispatcherSettings = Field(default_factory=DispatcherSettings)
     critique: CritiqueSettings = Field(default_factory=CritiqueSettings)
     checkpointing: CheckpointSettings = Field(default_factory=CheckpointSettings)
+    integrity: IntegritySettings = Field(default_factory=IntegritySettings)
+    delegation: DelegationSettings = Field(default_factory=DelegationSettings)
+    ledger: LedgerSettings = Field(default_factory=LedgerSettings)
     backtracking: BacktrackingSettings = Field(default_factory=BacktrackingSettings)
     tier_timeouts: Dict[CycleTier, float] = Field(default_factory=lambda: dict(_DEFAULT_TIER_TIMEOUTS))
     allow_simulated_adapters: bool = True
@@ -90,6 +111,9 @@ def load_settings(path: Optional[Path] = None) -> Settings:
         dispatcher=DispatcherSettings(**(raw.get("dispatcher") or {})),
         critique=CritiqueSettings(**(meta_skills.get("critique") or {})),
         checkpointing=CheckpointSettings(**(meta_skills.get("checkpointing") or {})),
+        integrity=IntegritySettings(**(meta_skills.get("integrity") or {})),
+        delegation=DelegationSettings(**(raw.get("delegation") or {})),
+        ledger=LedgerSettings(**(raw.get("ledger") or {})),
         backtracking=BacktrackingSettings(**(meta_skills.get("backtracking") or {})),
         tier_timeouts=tier_timeouts,
         allow_simulated_adapters=bool((raw.get("adapters") or {}).get("allow_simulated", True)),

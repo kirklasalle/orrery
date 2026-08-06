@@ -7,6 +7,8 @@ import os
 import json
 import logging
 from pathlib import Path
+from orrery.core import integrity
+from orrery.core.integrity import ChainVerification, IntegrityError
 from orrery.core.types import Checkpoint, StateContext, CycleStatus, CyclePhase, validate_identifier
 
 logger = logging.getLogger(__name__)
@@ -16,14 +18,28 @@ class CheckpointManager:
     """
     Manages persistent disk and in-memory checkpoints for stateful cognitive cycles,
     enabling point-in-time rewind, backtracking, and cross-session resume.
+
+    Checkpoints form a per-cycle hash chain, so an altered or truncated history is
+    detectable rather than merely unlikely.
     """
 
-    def __init__(self, max_checkpoints: int = 100, storage_dir: str = ".checkpoints"):
+    def __init__(
+        self,
+        max_checkpoints: int = 100,
+        storage_dir: str = ".checkpoints",
+        max_checkpoints_on_disk_per_cycle: int = 50,
+        verify_on_load: bool = True,
+        require_signature: bool = False,
+    ):
         self.max_checkpoints = max_checkpoints
+        self.max_checkpoints_on_disk_per_cycle = max_checkpoints_on_disk_per_cycle
+        self.verify_on_load = verify_on_load
+        self.require_signature = require_signature
         self.storage_dir = Path(storage_dir)
         self._checkpoints: Dict[str, Checkpoint] = {}
         self._cycle_history: Dict[str, List[str]] = {}
-        
+        self._chain_head: Dict[str, str] = {}
+
         # Ensure storage directory exists
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
@@ -51,6 +67,8 @@ class CheckpointManager:
             state_data=state_snapshot,
             step_number=context.step_count,
         )
+        integrity.seal(checkpoint, self._chain_head.get(context.cycle_id))
+        self._chain_head[context.cycle_id] = checkpoint.content_hash or integrity.GENESIS_HASH
 
         self._checkpoints[checkpoint.checkpoint_id] = checkpoint
         
@@ -58,17 +76,113 @@ class CheckpointManager:
             self._cycle_history[context.cycle_id] = []
         self._cycle_history[context.cycle_id].append(checkpoint.checkpoint_id)
 
-        # Enforce in-memory storage limits
-        if len(self._checkpoints) > self.max_checkpoints:
-            oldest_id = list(self._checkpoints.keys())[0]
-            del self._checkpoints[oldest_id]
+        self._evict_from_memory()
 
         context.active_checkpoint_id = checkpoint.checkpoint_id
         
         # Persist to disk
         self._save_to_disk(checkpoint)
+        self._prune_disk(context.cycle_id)
         
         return checkpoint
+
+    def _evict_from_memory(self) -> None:
+        """
+        Evicts oldest in-memory checkpoints, never the head of a cycle's chain, which
+        backtracking still needs. Evicted entries remain readable from disk.
+        """
+        if len(self._checkpoints) <= self.max_checkpoints:
+            return
+
+        protected = {history[-1] for history in self._cycle_history.values() if history}
+        for checkpoint_id in list(self._checkpoints.keys()):
+            if len(self._checkpoints) <= self.max_checkpoints:
+                break
+            if checkpoint_id not in protected:
+                del self._checkpoints[checkpoint_id]
+
+    def _prune_disk(self, cycle_id: str) -> None:
+        """
+        Bounds unattended disk growth by deleting the oldest checkpoints of a cycle.
+        Pruning truncates the head of the hash chain; it never rewrites a link, so the
+        surviving chain still verifies and reports itself as truncated.
+        """
+        limit = self.max_checkpoints_on_disk_per_cycle
+        if limit <= 0:
+            return
+
+        history = self._cycle_history.get(cycle_id, [])
+        overflow = len(history) - limit
+        if overflow <= 0:
+            return
+
+        for checkpoint_id in history[:overflow]:
+            try:
+                self._resolve_within_storage(cycle_id, f"{checkpoint_id}.json").unlink(missing_ok=True)
+            except (OSError, ValueError) as exc:
+                logger.warning("Could not prune checkpoint %s: %s", checkpoint_id, exc)
+            self._checkpoints.pop(checkpoint_id, None)
+
+        self._cycle_history[cycle_id] = history[overflow:]
+
+    def purge_cycle(self, cycle_id: str) -> int:
+        """
+        Removes every checkpoint for a cycle from memory and disk. Returns the count removed.
+        """
+        removed = 0
+        for checkpoint_id in self._cycle_history.pop(cycle_id, []):
+            self._checkpoints.pop(checkpoint_id, None)
+            try:
+                path = self._resolve_within_storage(cycle_id, f"{checkpoint_id}.json")
+            except ValueError:
+                continue
+            if path.exists():
+                path.unlink()
+                removed += 1
+
+        self._chain_head.pop(cycle_id, None)
+        try:
+            cycle_dir = self._resolve_within_storage(cycle_id)
+        except ValueError:
+            return removed
+        if cycle_dir.is_dir() and not any(cycle_dir.iterdir()):
+            cycle_dir.rmdir()
+        return removed
+
+    def verify_chain(self, cycle_id: str) -> ChainVerification:
+        """
+        Walks a cycle's checkpoints, confirming each digest and each link to its predecessor.
+        """
+        history = self._cycle_history.get(cycle_id, [])
+        result = ChainVerification(cycle_id=cycle_id, verified=True, checked=0)
+        if not history:
+            return result
+
+        expected_prev: Optional[str] = None
+        for position, checkpoint_id in enumerate(history):
+            checkpoint = self.get_checkpoint(checkpoint_id)
+            if checkpoint is None:
+                result.verified = False
+                result.failures.append(f"checkpoint {checkpoint_id} is missing from the chain")
+                continue
+
+            reason = integrity.verify(checkpoint, require_signature=self.require_signature)
+            if reason:
+                result.verified = False
+                result.failures.append(reason)
+
+            if position == 0:
+                result.truncated = checkpoint.prev_hash not in (None, integrity.GENESIS_HASH)
+            elif checkpoint.prev_hash != expected_prev:
+                result.verified = False
+                result.failures.append(
+                    f"checkpoint {checkpoint_id} does not link to its predecessor"
+                )
+
+            expected_prev = checkpoint.content_hash
+            result.checked += 1
+
+        return result
 
     def get_checkpoint(self, checkpoint_id: str) -> Optional[Checkpoint]:
         """
@@ -153,8 +267,21 @@ class CheckpointManager:
                         with open(target_file, "r", encoding="utf-8") as f:
                             data = json.load(f)
                         checkpoint = Checkpoint.model_validate(data)
-                        self._checkpoints[checkpoint.checkpoint_id] = checkpoint
-                        return checkpoint
                     except Exception as e:
                         logger.error(f"Failed to load checkpoint from disk ({target_file}): {e}")
+                        return None
+
+                    if self.verify_on_load:
+                        reason = integrity.verify(
+                            checkpoint, require_signature=self.require_signature
+                        )
+                        if reason:
+                            # A checkpoint that cannot be trusted must not be restored from.
+                            logger.error("Refusing tampered checkpoint from %s: %s", target_file, reason)
+                            if self.require_signature:
+                                raise IntegrityError(reason)
+                            return None
+
+                    self._checkpoints[checkpoint.checkpoint_id] = checkpoint
+                    return checkpoint
         return None

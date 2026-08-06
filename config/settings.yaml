@@ -28,9 +28,25 @@ meta_skills:
     strict_mode: false
   checkpointing:
     max_checkpoints_in_memory: 100
+    max_checkpoints_on_disk_per_cycle: 50
     storage_dir: ".checkpoints"
+  integrity:
+    verify_on_load: true
+    # Set ORRERY_CHECKPOINT_KEY and enable this to refuse unsigned checkpoints.
+    require_signature: false
   backtracking:
     max_retries_per_step: 3
+
+delegation:
+  max_depth: 4
+  max_children_per_cycle: 8
+  max_total_cycles: 32
+  enforce_tier_descent: true
+
+# Append-only audit trail (Law 9). Never rewound by backtracking.
+ledger:
+  persist: true
+  storage_dir: ".ledger"
 
 adapters:
   active:

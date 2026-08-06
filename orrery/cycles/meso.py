@@ -14,8 +14,8 @@ class MesoCycle(BaseCycle):
     and operational domain logic.
     """
 
-    def __init__(self, context: Optional[StateContext] = None):
-        super().__init__(tier=CycleTier.MESO, context=context)
+    def __init__(self, context: Optional[StateContext] = None, **kwargs):
+        super().__init__(tier=CycleTier.MESO, context=context, **kwargs)
 
     async def perceive(self, context: Optional[StateContext] = None) -> StateContext:
         ctx = context or self.context
@@ -42,7 +42,7 @@ class MesoCycle(BaseCycle):
         ctx = await self.dispatch_actions(ctx)
 
         # 2. Delegate atomic action to child MicroCycle
-        micro_child = MicroCycle()
+        micro_child = self.spawn_child(MicroCycle)
         await self.delegate_to_child(micro_child)
 
         self.context = ctx

@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Gate 2 — governance stops being a document.**
+  - `GOVERNANCE.md` maps all 10 Laws to policy IDs, runtime predicates, mechanisms, and tests.
+    It is checked against `orrery/core/governance.py` by `tests/test_governance.py` in CI, so the
+    document cannot claim an enforcement the code does not implement, and a policy marked
+    `ENFORCED` without a test fails the build. It states plainly that **5 of the 10 Laws have
+    no runtime control**.
+  - `orrery/core/ledger.py` — an append-only, hash-linked `EventLedger` (Law 9). Phase
+    transitions, action outcomes, critiques, rollbacks, adapter registrations, and delegation
+    decisions are recorded as JSONL. It lives outside the rewindable `StateContext` and exposes
+    no delete, update, or truncate operation, so backtracking rewinds state while the record of
+    the erased attempts survives.
+  - `orrery/core/delegation.py` — delegation is authorized before it runs (Law 10), against
+    depth (`DEL-001`), per-parent fan-out (`DEL-002`), tree population (`DEL-003`), ancestry
+    loops (`DEL-004`), and tier ordering (`DEL-005`). A refusal produces a failed receipt rather
+    than an exception, so the parent's own reflection handles it. Subclass `DelegationPolicy`
+    for site rules; `spawn_child` propagates it so governance is not reset one tier down.
+  - `orrery/core/integrity.py` — checkpoints are SHA-256 hash-linked and verified on load; an
+    edited checkpoint file is refused rather than restored. Optional HMAC-SHA256 signing via
+    `ORRERY_CHECKPOINT_KEY`, and `integrity.require_signature` to refuse unsigned checkpoints.
+  - `CheckpointManager.verify_chain()`, `EventLedger.verify()`, and `purge_cycle()`.
+  - `.github/workflows/ci.yml` — tests on Linux and Windows across Python 3.10–3.12, plus a
+    separate governance conformance gate.
+
+### Fixed
+
+- **Unbounded checkpoint growth (H-5).** In-memory eviction previously dropped the oldest entry
+  regardless of whether a cycle still needed it, and never touched `_cycle_history` or disk.
+  Eviction now protects each cycle's chain head, disk retention is bounded per cycle by
+  `max_checkpoints_on_disk_per_cycle`, and pruning truncates the chain without rewriting a link,
+  so the surviving chain still verifies and reports itself as truncated.
+
 ### Changed
 
 - **Gate 1 — the core is now honest.** Execution no longer fabricates results.
@@ -53,7 +86,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Missing `Optional` import in the adapter base class — a latent `ImportError` on the declared
   Python 3.10 target, masked by the workspace's Python 3.14 deferred annotations.
 
-## [1.0.0] - 2026-07-31
+## [0.1.0] - 2026-07-31
+
+> **Correction.** This entry was originally published as `1.0.0`. The package has always
+> declared `0.1.0` in `pyproject.toml` and `orrery.__version__`, and a release whose core
+> execution path reported unconditional success was not a 1.0. The heading is corrected to
+> match the code; the content below is unchanged.
 
 ### Added
 
