@@ -3,8 +3,8 @@ Hermes / Console Backend Reasoning Harness Adapter.
 """
 
 from typing import Any, Dict, Optional
-from src.core.types import ActionPayload, ExecutionReceipt, StateContext, CritiqueResult
-from src.adapters.base import BaseAdapter
+from orrery.core.types import ActionPayload, ExecutionReceipt, StateContext, CritiqueResult
+from orrery.adapters.base import BaseAdapter
 
 
 class HermesAdapter(BaseAdapter):

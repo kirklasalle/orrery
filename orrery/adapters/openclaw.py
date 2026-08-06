@@ -3,8 +3,8 @@ Prism Refraction & OpenClaw Platform Adapter.
 """
 
 from typing import Any, Dict, Optional
-from src.core.types import ActionPayload, ExecutionReceipt, StateContext
-from src.adapters.base import BaseAdapter
+from orrery.core.types import ActionPayload, ExecutionReceipt, StateContext
+from orrery.adapters.base import BaseAdapter
 
 
 class OpenClawAdapter(BaseAdapter):

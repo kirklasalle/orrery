@@ -4,7 +4,7 @@ Cycle Dispatcher Multi-Stage State Machine.
 
 import logging
 from typing import Callable, Dict, Optional, Awaitable, Any
-from src.core.types import (
+from orrery.core.types import (
     CyclePhase,
     CycleStatus,
     StateContext,
@@ -12,8 +12,8 @@ from src.core.types import (
     ActionPayload,
     ExecutionReceipt,
 )
-from src.core.state import CheckpointManager
-from src.core.critique import SelfCritiqueEngine
+from orrery.core.state import CheckpointManager
+from orrery.core.critique import SelfCritiqueEngine
 
 logger = logging.getLogger(__name__)
 

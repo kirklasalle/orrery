@@ -1,3 +1,3 @@
 """
-Unit test suite for Cognition Cycles.
+Unit test suite for Orrery.
 """

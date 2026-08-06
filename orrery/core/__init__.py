@@ -2,7 +2,7 @@
 Core engine components: Types, State Machine Dispatcher, State Checkpointing, Self-Critique.
 """
 
-from src.core.types import (
+from orrery.core.types import (
     CyclePhase,
     CycleTier,
     CycleStatus,
@@ -12,9 +12,9 @@ from src.core.types import (
     ActionPayload,
     ExecutionReceipt,
 )
-from src.core.state import CheckpointManager
-from src.core.critique import SelfCritiqueEngine
-from src.core.dispatcher import CycleDispatcher
+from orrery.core.state import CheckpointManager
+from orrery.core.critique import SelfCritiqueEngine
+from orrery.core.dispatcher import CycleDispatcher
 
 __all__ = [
     "CyclePhase",

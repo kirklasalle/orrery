@@ -1,5 +1,5 @@
 """
-Cognition Cycles End-to-End Demonstration Script.
+Orrery End-to-End Demonstration Script.
 
 Demonstrates:
 1. Multi-tier nested cycle delegation (Meta -> Macro -> Meso -> Micro)
@@ -16,10 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import asyncio
 import logging
-from src.core.types import StateContext, CycleTier, CyclePhase, CycleStatus, ExecutionReceipt
-from src.cycles.meta import MetaCycle
-from src.adapters.hermes import HermesAdapter
-from src.adapters.windows_os import WindowsOSAdapter
+from orrery.core.types import StateContext, CycleTier, CyclePhase, CycleStatus, ExecutionReceipt
+from orrery.cycles.meta import MetaCycle
+from orrery.adapters.hermes import HermesAdapter
+from orrery.adapters.windows_os import WindowsOSAdapter
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

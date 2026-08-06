@@ -7,7 +7,7 @@ import os
 import json
 import logging
 from pathlib import Path
-from src.core.types import Checkpoint, StateContext, CycleStatus, CyclePhase
+from orrery.core.types import Checkpoint, StateContext, CycleStatus, CyclePhase, validate_identifier
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,18 @@ class CheckpointManager:
         
         # Ensure storage directory exists
         self.storage_dir.mkdir(parents=True, exist_ok=True)
+
+    def _resolve_within_storage(self, *parts: str) -> Path:
+        """
+        Resolves a path beneath the storage root, rejecting any result that escapes it.
+        """
+        root = self.storage_dir.resolve()
+        candidate = root.joinpath(*parts).resolve()
+
+        if candidate != root and not candidate.is_relative_to(root):
+            raise ValueError(f"Refusing checkpoint path outside storage root: {candidate}")
+
+        return candidate
 
     def create_checkpoint(self, context: StateContext) -> Checkpoint:
         """
@@ -105,12 +117,15 @@ class CheckpointManager:
         """
         Serializes a checkpoint object to disk in JSON format.
         """
-        cycle_dir = self.storage_dir / checkpoint.cycle_id
+        cycle_dir = self._resolve_within_storage(checkpoint.cycle_id)
         cycle_dir.mkdir(parents=True, exist_ok=True)
-        filepath = cycle_dir / f"{checkpoint.checkpoint_id}.json"
+        filepath = self._resolve_within_storage(checkpoint.cycle_id, f"{checkpoint.checkpoint_id}.json")
 
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(checkpoint.model_dump_json(indent=2))
+
+        # Checkpoints carry full goal and state data; restrict to the owning user.
+        os.chmod(filepath, 0o600)
 
         return filepath
 
@@ -118,6 +133,12 @@ class CheckpointManager:
         """
         Searches disk for a checkpoint JSON file and loads it.
         """
+        try:
+            validate_identifier(checkpoint_id)
+        except ValueError:
+            logger.error(f"Rejected malformed checkpoint identifier: {checkpoint_id!r}")
+            return None
+
         for cycle_dir in self.storage_dir.glob("*"):
             if cycle_dir.is_dir():
                 target_file = cycle_dir / f"{checkpoint_id}.json"

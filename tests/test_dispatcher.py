@@ -3,8 +3,8 @@ Tests for CycleDispatcher state machine transitions across 4 phases.
 """
 
 import asyncio
-from src.core.dispatcher import CycleDispatcher
-from src.core.types import StateContext, CyclePhase, CycleStatus, CycleTier
+from orrery.core.dispatcher import CycleDispatcher
+from orrery.core.types import StateContext, CyclePhase, CycleStatus, CycleTier
 
 
 def test_dispatcher_single_step_transitions():

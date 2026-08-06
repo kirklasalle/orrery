@@ -1,12 +1,13 @@
-# Cognition Cycles Setup & Integration Guide
+# Orrery Setup & Integration Guide
 
-> **Target Repository:** `https://github.com/kirklasalle/cognition-cycles`
+> **Target Repository:** `https://github.com/kirklasalle/orrery`
 
 ---
 
 ## 1. Installation
 
 ### Requirements
+
 - Python 3.10+
 - Pytest (for unit test verification)
 
@@ -14,8 +15,8 @@
 
 ```bash
 # Clone repository
-git clone https://github.com/kirklasalle/cognition-cycles.git
-cd cognition-cycles
+git clone https://github.com/kirklasalle/orrery.git
+cd orrery
 
 # Create and activate virtual environment
 python -m venv .venv
@@ -54,8 +55,8 @@ python examples/demo_cycle.py
 
 ```python
 import asyncio
-from src.core.types import StateContext, CycleTier
-from src.cycles.meta import MetaCycle
+from orrery.core.types import StateContext, CycleTier
+from orrery.cycles.meta import MetaCycle
 
 async def main():
     # Initialize state context

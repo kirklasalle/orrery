@@ -1,9 +1,9 @@
-# Cognition Cycles: Product Requirements Document (PRD)
+# Orrery: Product Requirements Document (PRD)
 
 **Version:** 1.0.0  
 **Status:** Approved / Active  
 **Author:** Antigravity Engineering & System Architecture  
-**Target Repository:** `https://github.com/kirklasalle/cognition-cycles`
+**Target Repository:** `https://github.com/kirklasalle/orrery`
 
 ---
 
@@ -11,7 +11,7 @@
 
 Traditional AI agent frameworks operate on single-turn ReAct loops ($\text{Prompt} \rightarrow \text{Tool Call} \rightarrow \text{Observation} \rightarrow \text{Answer}$). While sufficient for basic Q&A or linear scripting, single-turn loops fail when executing complex, long-horizon tasks requiring multi-layered abstraction, self-correction, state isolation, and deterministic rollback.
 
-**Cognition Cycles** introduces a multi-tier, stateful cognitive loop paradigm that decouples strategic planning from micro-execution. Operating across **Perception**, **Planning**, **Execution**, and **Reflection**, Cognition Cycles provides state checkpointing, automated backtracking, quantitative self-critique, and seamless platform adapters for OpenClaw/Prism Refraction, Hermes/Console, and Windows OS Agent desktop automation.
+**Orrery** introduces a multi-tier, stateful cognitive loop paradigm that decouples strategic planning from micro-execution. Operating across **Perception**, **Planning**, **Execution**, and **Reflection**, Orrery provides state checkpointing, automated backtracking, quantitative self-critique, and seamless platform adapters for popular agent harnesses, such as OpenClaw, Prism Refraction, Hermes, Frontier Console, and Windows OS Agent desktop automation.
 
 ---
 
@@ -21,7 +21,13 @@ Traditional AI agent frameworks operate on single-turn ReAct loops ($\text{Promp
 - **Hierarchical Abstraction**: Provide 4 explicit abstraction tiers (**Meta**, **Macro**, **Meso**, **Micro**) with clear delegation boundaries and parent-child state propagation.
 - **Resilient Recovery**: Implement zero-data-loss state checkpointing and automatic backtracking when reflection scores fall below quality thresholds ($\theta_{\text{critique}} = 0.70$).
 - **Platform Agnostic Execution**: Supply extensible adapter interfaces for cloud task routing, LLM reasoning harnesses, and desktop UI automation.
-- **Production-Grade Engineering**: High-coverage test suite, typed Pydantic contracts, asynchronous execution, and zero unhandled exceptions.
+- **Engineering Baseline**: Typed Pydantic contracts, asynchronous execution, and a maintained test suite.
+
+> **Implementation status (August 6, 2026).** This document describes the target design. It is not a
+> description of current behavior. As of this revision the shipped adapters are simulations that perform
+> no real I/O, and the reflection/backtracking gate is not exercised by any production code path because
+> all execution handlers report unconditional success. See [audit_2026-08-06.md](audit_2026-08-06.md)
+> for the full gap analysis and remediation gates.
 
 ---
 
@@ -65,15 +71,18 @@ Each cycle step transitions deterministically through four phases:
 ## 5. Built-in Meta-Skills
 
 ### 5.1 State Checkpointing & Disk Persistence
+
 - Snapshots `StateContext` before entering critical phase transitions.
 - Supports both in-memory caching and persistent disk storage in `.checkpoints/<cycle_id>/<checkpoint_id>.json`.
 
 ### 5.2 Automated Backtracking
+
 - Triggered when `CritiqueResult.passed == False` (score $< 0.70$).
 - Rewinds `StateContext` to the most recent safe checkpoint, increments `backtrack_count`, and re-routes execution back to **PLANNING**.
 - Enforces `max_backtracks = 3` limit before failing gracefully.
 
 ### 5.3 Agent Self-Critique
+
 - Quantitative scoring engine analyzing success ratio of execution receipts vs planned actions.
 - Generates actionable feedback recommendations for plan adjustments upon failure.
 
@@ -89,7 +98,8 @@ Each cycle step transitions deterministically through four phases:
 
 ## 7. Non-Functional & Quality Requirements
 
-- **Python Compatibility**: Python 3.10+
-- **Test Coverage**: $>90\%$ line coverage across dispatcher, tiers, state checkpointing, and adapters.
+- **Python Compatibility**: Python 3.10+ (verified against 3.10 via the repository `.venv`).
+- **Test Coverage**: **Measured 86% line coverage of `orrery/`** (564 statements, 51 tests) as of August 6, 2026. Target: $\geq 90\%$, with behavioral assertions rather than line execution alone.
 - **Async Execution**: Non-blocking `async/await` throughout all phase handlers and cycle runners.
 - **Code Quality**: Strict type hint enforcement, Pydantic v2 validation, zero global state mutations.
+- **Path Safety**: All checkpoint identifiers are validated as canonical UUIDs and all checkpoint I/O is confined to the configured storage root.

@@ -4,7 +4,7 @@ Tests for Meta-Skills: Checkpointing, Disk Persistence, Backtracking, and Self-C
 
 import asyncio
 from pathlib import Path
-from src.core.types import (
+from orrery.core.types import (
     StateContext,
     CyclePhase,
     CycleStatus,
@@ -12,9 +12,9 @@ from src.core.types import (
     ExecutionReceipt,
     ActionPayload,
 )
-from src.core.state import CheckpointManager
-from src.core.critique import SelfCritiqueEngine
-from src.core.dispatcher import CycleDispatcher
+from orrery.core.state import CheckpointManager
+from orrery.core.critique import SelfCritiqueEngine
+from orrery.core.dispatcher import CycleDispatcher
 
 
 def test_checkpointing_and_restore():

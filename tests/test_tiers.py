@@ -3,11 +3,11 @@ Tests for Hierarchical Abstraction Tiers (Meta, Macro, Meso, Micro).
 """
 
 import asyncio
-from src.core.types import StateContext, CycleTier, CycleStatus
-from src.cycles.meta import MetaCycle
-from src.cycles.macro import MacroCycle
-from src.cycles.meso import MesoCycle
-from src.cycles.micro import MicroCycle
+from orrery.core.types import StateContext, CycleTier, CycleStatus
+from orrery.cycles.meta import MetaCycle
+from orrery.cycles.macro import MacroCycle
+from orrery.cycles.meso import MesoCycle
+from orrery.cycles.micro import MicroCycle
 
 
 def test_meta_cycle_execution():

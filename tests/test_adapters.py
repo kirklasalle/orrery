@@ -3,10 +3,10 @@ Tests for Platform Adapters (OpenClaw, Hermes, Windows OS Agent).
 """
 
 import asyncio
-from src.core.types import StateContext, ActionPayload, CycleTier
-from src.adapters.openclaw import OpenClawAdapter
-from src.adapters.hermes import HermesAdapter
-from src.adapters.windows_os import WindowsOSAdapter
+from orrery.core.types import StateContext, ActionPayload, CycleTier
+from orrery.adapters.openclaw import OpenClawAdapter
+from orrery.adapters.hermes import HermesAdapter
+from orrery.adapters.windows_os import WindowsOSAdapter
 
 
 def test_openclaw_adapter():

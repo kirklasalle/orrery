@@ -5,8 +5,8 @@ Base Cognitive Cycle Interface with Child Tier Delegation.
 from abc import ABC, abstractmethod
 from typing import Optional, List
 import logging
-from src.core.types import StateContext, CycleTier, CyclePhase, CycleStatus
-from src.core.dispatcher import CycleDispatcher
+from orrery.core.types import StateContext, CycleTier, CyclePhase, CycleStatus
+from orrery.core.dispatcher import CycleDispatcher
 
 logger = logging.getLogger(__name__)
 

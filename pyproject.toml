@@ -3,18 +3,30 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cognition-cycles"
+name = "orrery"
 version = "0.1.0"
-description = "Cognition Cycles: Stateful multi-tier cognitive state loops replacing basic ReAct loops"
+description = "Orrery: stateful multi-tier cognitive cycles for long-horizon agents"
 readme = "README.md"
+license = { text = "MIT" }
 authors = [
-    { name = "Antigravity Engineering", email = "dev@cognitioncycles.org" }
+    { name = "Kirk LaSalle" }
 ]
 requires-python = ">=3.10"
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "pydantic>=2.0.0",
     "pyyaml>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/kirklasalle/orrery"
+Repository = "https://github.com/kirklasalle/orrery"
+Changelog = "https://github.com/kirklasalle/orrery/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
@@ -24,6 +36,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["orrery*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

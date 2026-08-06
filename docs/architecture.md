@@ -1,4 +1,4 @@
-# Cognition Cycles Architecture Specification
+# Orrery Architecture Specification
 
 > **Version:** 1.0.0  
 > **Status:** Production Architecture
@@ -7,7 +7,7 @@
 
 ## 1. Executive System Overview
 
-**Cognition Cycles** ("outgrowing the basic loop") is an enterprise agentic framework designed to replace single-step ReAct loops ($\text{Prompt} \rightarrow \text{Tool Call} \rightarrow \text{Observation} \rightarrow \text{Answer}$) with stateful, multi-tier cognitive state loops.
+**Orrery** ("outgrowing the basic loop") is an agentic framework designed to replace single-step ReAct loops ($\text{Prompt} \rightarrow \text{Tool Call} \rightarrow \text{Observation} \rightarrow \text{Answer}$) with stateful, multi-tier cognitive state loops.
 
 ---
 
@@ -59,14 +59,17 @@ The `CycleDispatcher` manages state transitions across four core phases:
 ## 4. Built-in Meta-Skills
 
 ### 4.1 Disk-Backed State Checkpointing
+
 - Snapshots immutable `StateContext` objects before phase transitions.
 - Persists JSON metadata to `.checkpoints/<cycle_id>/<checkpoint_id>.json` for cross-process session restores.
 
 ### 4.2 Automated Backtracking
+
 - Rewinds execution back to the `PLANNING` phase of the safe checkpoint when reflection fails.
 - Increments `backtrack_count` and modifies strategy context to guarantee convergence.
 
 ### 4.3 Agent Self-Critique
+
 - Computes numerical scores ($0.0 - 1.0$) based on action success ratios and policy invariants.
 - Emits actionable recommendations for plan revision upon failure.
 
@@ -74,6 +77,6 @@ The `CycleDispatcher` manages state transitions across four core phases:
 
 ## 5. Integration Adapters
 
-- **[OpenClawAdapter](file:///d:/Projects/cognition_cycles/src/adapters/openclaw.py)**: Interoperates with Prism Refraction routing core and OpenClaw state engine.
-- **[HermesAdapter](file:///d:/Projects/cognition_cycles/src/adapters/hermes.py)**: Interoperates with Hermes reasoning harness and console evaluation gates.
-- **[WindowsOSAdapter](file:///d:/Projects/cognition_cycles/src/adapters/windows_os.py)**: Interoperates with Windows OS Agent for desktop UI state verification.
+- **[OpenClawAdapter](../orrery/adapters/openclaw.py)**: Interoperates with Prism Refraction routing core and OpenClaw state engine.
+- **[HermesAdapter](../orrery/adapters/hermes.py)**: Interoperates with Hermes reasoning harness and console evaluation gates.
+- **[WindowsOSAdapter](../orrery/adapters/windows_os.py)**: Interoperates with Windows OS Agent for desktop UI state verification.

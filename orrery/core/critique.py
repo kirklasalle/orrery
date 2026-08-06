@@ -3,7 +3,7 @@ Agent Self-Critique & Reflection Engine.
 """
 
 from typing import List, Optional
-from src.core.types import StateContext, CritiqueResult, ExecutionReceipt, ActionPayload
+from orrery.core.types import StateContext, CritiqueResult, ExecutionReceipt, ActionPayload
 
 
 class SelfCritiqueEngine:

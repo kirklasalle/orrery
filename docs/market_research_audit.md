@@ -1,5 +1,12 @@
 # Market Research & Strategic Positioning Audit: Cognition Cycles
 
+> 🚫 **SUPERSEDED — DO NOT CITE.** Retained only as a historical artifact.
+>
+> - The market sizing in this document is **unsourced and not traceable to any published research**.
+>   Use [competitive_landscape_2026.md](competitive_landscape_2026.md) instead.
+> - The project has since been renamed from *Cognition Cycles* to **Orrery**; names and repository
+>   URLs below are stale by design and are not maintained.
+
 **Document Reference:** `docs/market_research_audit.md`  
 **Date:** July 31, 2026  
 **Author:** Strategic Market Intelligence & Engineering Audit  

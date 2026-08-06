@@ -4,8 +4,8 @@ Windows OS Desktop Automation Agent Adapter.
 
 from typing import Any, Dict, Optional
 import asyncio
-from src.core.types import ActionPayload, ExecutionReceipt, StateContext
-from src.adapters.base import BaseAdapter
+from orrery.core.types import ActionPayload, ExecutionReceipt, StateContext
+from orrery.adapters.base import BaseAdapter
 
 
 class WindowsOSAdapter(BaseAdapter):
@@ -23,7 +23,7 @@ class WindowsOSAdapter(BaseAdapter):
         return {
             "platform": "Windows OS",
             "screen_state": "focused",
-            "active_window": "CognitionCycles Desktop Controller",
+            "active_window": "Orrery Desktop Controller",
             "display_resolution": "1920x1080",
             "verification_active": self.verify_screen_state,
         }
