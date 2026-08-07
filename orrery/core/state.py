@@ -30,11 +30,13 @@ class CheckpointManager:
         max_checkpoints_on_disk_per_cycle: int = 50,
         verify_on_load: bool = True,
         require_signature: bool = False,
+        require_asymmetric: bool = False,
     ):
         self.max_checkpoints = max_checkpoints
         self.max_checkpoints_on_disk_per_cycle = max_checkpoints_on_disk_per_cycle
         self.verify_on_load = verify_on_load
-        self.require_signature = require_signature
+        self.require_signature = require_signature or require_asymmetric
+        self.require_asymmetric = require_asymmetric
         self.storage_dir = Path(storage_dir)
         self._checkpoints: Dict[str, Checkpoint] = {}
         self._cycle_history: Dict[str, List[str]] = {}
@@ -166,7 +168,11 @@ class CheckpointManager:
                 result.failures.append(f"checkpoint {checkpoint_id} is missing from the chain")
                 continue
 
-            reason = integrity.verify(checkpoint, require_signature=self.require_signature)
+            reason = integrity.verify(
+                checkpoint,
+                require_signature=self.require_signature,
+                require_asymmetric=self.require_asymmetric,
+            )
             if reason:
                 result.verified = False
                 result.failures.append(reason)
@@ -273,7 +279,9 @@ class CheckpointManager:
 
                     if self.verify_on_load:
                         reason = integrity.verify(
-                            checkpoint, require_signature=self.require_signature
+                            checkpoint,
+                            require_signature=self.require_signature,
+                            require_asymmetric=self.require_asymmetric,
                         )
                         if reason:
                             # A checkpoint that cannot be trusted must not be restored from.

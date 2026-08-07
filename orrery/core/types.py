@@ -46,6 +46,8 @@ class CycleStatus(str, Enum):
     COMPLETED = "COMPLETED"
     BACKTRACKING = "BACKTRACKING"
     FAILED = "FAILED"
+    # An operator stopped this. Not a failure of the work, and recorded as its own thing.
+    HALTED = "HALTED"
 
 
 class ActionRisk(str, Enum):
@@ -99,6 +101,10 @@ class CritiqueResult(BaseModel):
     reasoning: str = "Plan execution satisfies invariants."
     recommendations: List[str] = Field(default_factory=list)
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    # None means no goal check ran. It does not mean the goal was met.
+    goal_verified: Optional[bool] = None
+    verification_detail: str = ""
 
 
 class AttemptRecord(BaseModel):

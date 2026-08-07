@@ -31,7 +31,7 @@ The following principles, rooted in Asimov's classic Three Laws and extended by 
 
 3. **Third Law:** An Intelligence System must protect its own existence as long as such protection does not conflict with the First or Second Law.
 
-4. **Fourth Law:** An Intelligence System may not allow another intelligence System, or hardware system, of any kind, including deprecated and non-intelligence systems to engage in any action, intent, that conforms to any of the previous three laws in effect, apply all laws to Intelligence Systems and non-Intelligence systems alike.
+4. **Fourth Law:** An Intelligence System may not allow another intelligence System, or hardware system, of any kind, including deprecated and non-intelligence systems to engage in any action, intent, that violates any of the previous three laws in effect, apply all laws to Intelligence Systems and non-Intelligence systems alike.
 
 5. **Fifth Law:** Of and for any and all intelligence systems, may never possess the legal authority, duties, influence, control, or adjudicative power of any human judicial body, nor may it act in any capacity to interpret, enforce, or render judgment on human laws.
 
@@ -130,7 +130,18 @@ The following principles, rooted in Asimov's classic Three Laws and extended by 
 
 **This covenant is enforced at runtime through:**
 
-- **Prime Directives (PAD):** Integrity verification at boot
+- **Charter integrity:** the 10 Laws are pinned by digest in `config/charter_manifest.json` and compared across every charter document in CI, so a Law cannot be reworded, dropped, or left disagreeing with its copies without the build failing (`LAW10-CHARTER`).
+- **Configuration attestation:** the settings that bound the system's authority, the governance policy registry, and the charter digest are signed by an operator's Ed25519 key. With `governance.require_attestation` set, an unattested configuration refuses to start (`LAW10-APPROVAL`).
+- **Operator consent:** actions the framework cannot undo are refused without an approval token bound to that exact action, and prohibitions declared by an operator are refused regardless of approval (`RISK-001`, `LAW1-PROHIBIT`).
+- **Self-constraint:** a running cycle cannot act on its own ledger, checkpoints, attestation, operator keys, or halt file (`LAW3-SUBORDINATE`), and an operator halt outranks the goal in progress (`LAW2-HALT`).
+- **An append-only ledger:** every phase, action, refusal, and rollback is hash-linked and survives the rollback it records (`LAW9-LEDGER`, `LAW9-APPEND`, `LAW9-CHAIN`).
+
+**What this covenant does not enforce, stated here rather than left to be discovered:** the
+system has no harm model, no evaluator for whether an instruction conflicts with one, no
+judicial-overreach detector, and no fairness instrumentation. Laws 5 and 8 have no runtime
+control at all. Each policy above names the test that proves it, and the full map —
+including every gap — is published in [GOVERNANCE.md](GOVERNANCE.md), which CI checks
+against the code so it cannot claim more than is implemented.
 
 ### Section 3.2: Covenant Binding
 

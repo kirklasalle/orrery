@@ -1,6 +1,13 @@
 # Cognition Cycles: Architecture & Project Scaffold Implementation Plan
 
-This implementation plan outlines the blueprint to create the **Cognition Cycles** framework ("outgrowing the basic loop") in `d:\Projects\cognition_cycles`. 
+> **Archived, July 2026. Superseded and inaccurate.**
+>
+> This is the original build plan, kept as a historical record rather than as guidance. The
+> project was renamed to **Orrery**, and the `src/` layout and `cognition-cycles` repository
+> named below no longer exist. For the current state see [README.md](../../README.md),
+> [docs/architecture.md](../architecture.md), and [docs/audit_2026-08-06.md](../audit_2026-08-06.md).
+
+This implementation plan outlines the blueprint to create the **Cognition Cycles** framework ("outgrowing the basic loop") in `d:\Projects\cognition_cycles`.
 
 Cognition Cycles replaces traditional single-step ReAct loops with stateful, multi-tier cognitive state loops operating across perception, planning, execution, and reflection.
 
@@ -9,6 +16,7 @@ Cognition Cycles replaces traditional single-step ReAct loops with stateful, mul
 ## User Review Required
 
 > [!IMPORTANT]
+>
 > - The framework is structured using standard Python with Pydantic for state contracts and typing, supporting async cycle execution.
 > - `.antigravity/` configuration is supplied with System 1 (Perception), System 2 (Deliberation), and Aggregator (Synthesis) agent role prompts and a multi-stage YAML workflow specification.
 > - Git initialization and initial commit will be prepared as requested once execution begins.
@@ -65,6 +73,7 @@ cognition-cycles/
 ## Detailed Components to Implement
 
 ### 1. Antigravity v2 System Rules & Workflows (`.antigravity/`)
+
 - `rules.md`: Formats rules for Classic IDE setup. Defines role definitions for:
   - **Perception Agent (Right Hemisphere / System 1)**: High temp hypothesis generator & context extractor.
   - **Deliberation Agent (Left Hemisphere / System 2)**: Low temp constraint solver & truth table evaluator.
@@ -72,6 +81,7 @@ cognition-cycles/
 - `workflows/cognition_cycle.yaml`: Pipeline defining artifact flow through Perception -> Deliberation -> Synthesis with validation schemas.
 
 ### 2. Core Engine & State Dispatcher (`src/core/`)
+
 - `types.py`: Defines enums (`CyclePhase`, `CycleTier`, `CycleStatus`) and Pydantic models (`StateContext`, `CritiqueResult`, `Checkpoint`, `ActionPayload`).
 - `dispatcher.py`: `CycleDispatcher` orchestrates state transitions:
   1. **Perception**: Extracts signals, parses environment context.
@@ -82,16 +92,19 @@ cognition-cycles/
 - `critique.py`: `SelfCritiqueEngine` checks output against rules and goals.
 
 ### 3. Hierarchical Abstraction Tiers (`src/cycles/`)
+
 - `base.py`: `BaseCycle` defining execution lifecycle (`perceive`, `plan`, `execute`, `reflect`).
 - `meta.py`, `macro.py`, `meso.py`, `micro.py`: Specialized cycle implementations handling nested cycle delegation from Meta down to Micro.
 
 ### 4. Target Platform Integration Adapters (`src/adapters/`)
+
 - `base.py`: `BaseAdapter` interface with `execute_action`, `perceive_environment`, `get_capabilities`.
 - `openclaw.py`: Prism Refraction & OpenClaw adapter for state routing.
 - `hermes.py`: Hermes / Console backend reasoning harness adapter.
 - `windows_os.py`: Desktop automation adapter for screen state verification.
 
 ### 5. Configuration, Docs, Tests & Tooling
+
 - Configuration in `config/settings.yaml`.
 - Architectural diagrams and guides in `docs/`.
 - Complete Pytest suite covering dispatcher, tiers, checkpointing/backtracking, critique, and adapters.
@@ -102,12 +115,15 @@ cognition-cycles/
 ## Verification Plan
 
 ### Automated Tests
+
 - Run `pytest` to execute all unit tests:
+
   ```powershell
   python -m pytest tests/ -v
   ```
 
 ### Manual Verification & Checks
+
 - Verify file structure matches requirements.
 - Verify git repository is initialized with main branch and clean working tree.
 - Validate Python typing and YAML configuration parsing.

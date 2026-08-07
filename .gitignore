@@ -46,3 +46,16 @@ env/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Operator private keys. The public keyring (config/operators.json) is safe to commit;
+# anything in here is not, and a leaked key forges consent retroactively.
+.keys/
+*.key
+
+# A local stop order. Halting is an operator act on one machine, not a repository state.
+.halt
+
+# Held actions awaiting classification. Runtime state, and it names the parameters a
+# deployment's adapters take. The classifications themselves (config/classifications.json)
+# are governance decisions and belong in version control.
+.quarantine/

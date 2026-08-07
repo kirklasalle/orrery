@@ -4,7 +4,7 @@ Runtime settings loaded from config/settings.yaml.
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 import logging
 import os
 
@@ -45,6 +45,7 @@ class CheckpointSettings(BaseModel):
 class IntegritySettings(BaseModel):
     verify_on_load: bool = True
     require_signature: bool = False
+    require_asymmetric: bool = False
 
 
 class DelegationSettings(BaseModel):
@@ -63,7 +64,43 @@ class ApprovalSettings(BaseModel):
     require_for_irreversible: bool = True
     require_for_compensable: bool = False
     require_signed: bool = False
+    require_asymmetric: bool = False
     ttl_seconds: float = 900.0
+
+
+class GovernanceSettings(BaseModel):
+    require_attestation: bool = False
+    attestation_path: str = "config/attestation.json"
+
+
+class ProhibitionSettings(BaseModel):
+    reason: str
+    adapters: List[str] = Field(default_factory=list)
+    actions: List[str] = Field(default_factory=list)
+    paths: List[str] = Field(default_factory=list)
+
+
+class InterdictionSettings(BaseModel):
+    halt_file: str = ".halt"
+    protect_runtime_paths: bool = True
+    prohibitions: List[ProhibitionSettings] = Field(default_factory=list)
+
+
+class QuarantineSettings(BaseModel):
+    enabled: bool = False
+    store: str = "config/classifications.json"
+    record_path: str = ".quarantine/held.jsonl"
+    require_signed: bool = False
+
+
+class EnvelopeSettings(BaseModel):
+    enforce: bool = False
+    paths: List[str] = Field(default_factory=list)
+
+
+class InvariantSettings(BaseModel):
+    on_breach: str = "record"
+    rules: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class BacktrackingSettings(BaseModel):
@@ -78,9 +115,15 @@ class Settings(BaseModel):
     delegation: DelegationSettings = Field(default_factory=DelegationSettings)
     ledger: LedgerSettings = Field(default_factory=LedgerSettings)
     approval: ApprovalSettings = Field(default_factory=ApprovalSettings)
+    governance: GovernanceSettings = Field(default_factory=GovernanceSettings)
+    interdiction: InterdictionSettings = Field(default_factory=InterdictionSettings)
+    quarantine: QuarantineSettings = Field(default_factory=QuarantineSettings)
+    envelope: EnvelopeSettings = Field(default_factory=EnvelopeSettings)
+    invariants: InvariantSettings = Field(default_factory=InvariantSettings)
     backtracking: BacktrackingSettings = Field(default_factory=BacktrackingSettings)
     tier_timeouts: Dict[CycleTier, float] = Field(default_factory=lambda: dict(_DEFAULT_TIER_TIMEOUTS))
-    allow_simulated_adapters: bool = True
+    # A fresh install should not accept fabricated receipts without being asked.
+    allow_simulated_adapters: bool = False
 
     def timeout_for(self, tier: CycleTier) -> float:
         return self.tier_timeouts.get(tier, _DEFAULT_TIER_TIMEOUTS[CycleTier.MICRO])
@@ -123,9 +166,14 @@ def load_settings(path: Optional[Path] = None) -> Settings:
         delegation=DelegationSettings(**(raw.get("delegation") or {})),
         ledger=LedgerSettings(**(raw.get("ledger") or {})),
         approval=ApprovalSettings(**(raw.get("approval") or {})),
+        governance=GovernanceSettings(**(raw.get("governance") or {})),
+        interdiction=InterdictionSettings(**(raw.get("interdiction") or {})),
+        quarantine=QuarantineSettings(**(raw.get("quarantine") or {})),
+        envelope=EnvelopeSettings(**(raw.get("envelope") or {})),
+        invariants=InvariantSettings(**(raw.get("invariants") or {})),
         backtracking=BacktrackingSettings(**(meta_skills.get("backtracking") or {})),
         tier_timeouts=tier_timeouts,
-        allow_simulated_adapters=bool((raw.get("adapters") or {}).get("allow_simulated", True)),
+        allow_simulated_adapters=bool((raw.get("adapters") or {}).get("allow_simulated", False)),
     )
 
 

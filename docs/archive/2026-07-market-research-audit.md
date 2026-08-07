@@ -3,14 +3,14 @@
 > 🚫 **SUPERSEDED — DO NOT CITE.** Retained only as a historical artifact.
 >
 > - The market sizing in this document is **unsourced and not traceable to any published research**.
->   Use [competitive_landscape_2026.md](competitive_landscape_2026.md) instead.
+>   Use [competitive_landscape_2026.md](../competitive_landscape_2026.md) instead.
 > - The project has since been renamed from *Cognition Cycles* to **Orrery**; names and repository
 >   URLs below are stale by design and are not maintained.
 
 **Document Reference:** `docs/market_research_audit.md`  
 **Date:** July 31, 2026  
 **Author:** Strategic Market Intelligence & Engineering Audit  
-**Target Project:** Cognition Cycles Framework (`https://github.com/kirklasalle/cognition-cycles`)
+**Target Project:** Cognition Cycles Framework (`https://github.com/kirklasalle/orrery`)
 
 ---
 
@@ -82,5 +82,5 @@ The global market for Autonomous AI Agents and Enterprise Agentic Orchestration 
 
 ## 6. Recommendations & Roadmap Alignment
 
-1. **Open-Source Core, Enterprise Extensions**: Maintain core dispatcher, state machine, and tiers as open-source (`https://github.com/kirklasalle/cognition-cycles`), with commercial adapters for cloud platforms.
+1. **Open-Source Core, Enterprise Extensions**: Maintain core dispatcher, state machine, and tiers as open-source (`https://github.com/kirklasalle/orrery`), with commercial adapters for cloud platforms.
 2. **Standardized Benchmarking**: Benchmark Cognition Cycles against standard agent evaluation suites (e.g. GAIA, SWE-bench, OSWorld) to visually showcase backtracking reliability over standard ReAct loops.

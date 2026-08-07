@@ -9,11 +9,12 @@ import pytest
 
 from orrery.adapters.conformance import run_conformance
 from orrery.adapters.filesystem import FileSystemAdapter
-from orrery.adapters.hermes import HermesAdapter
-from orrery.adapters.openclaw import OpenClawAdapter
-from orrery.adapters.windows_os import WindowsOSAdapter
+from orrery.adapters.process import ProcessAdapter
 from orrery.core.types import ActionRisk
-from tests.conftest import StubAdapter
+from examples.simulated.hermes import HermesAdapter
+from examples.simulated.openclaw import OpenClawAdapter
+from examples.simulated.windows_os import WindowsOSAdapter
+from tests.conftest import StubAdapter, UndeclaredAdapter
 
 
 @pytest.mark.parametrize(
@@ -39,6 +40,12 @@ def test_filesystem_adapter_conforms(tmp_path):
     assert report.passed, report.summary
 
 
+def test_process_adapter_conforms(tmp_path):
+    adapter = ProcessAdapter(root=str(tmp_path / "sandbox"), allowed_programs=["python"])
+    report = run_conformance(adapter, sample_action="list_allowed", sample_params={})
+    assert report.passed, report.summary
+
+
 def test_conformance_catches_an_adapter_that_raises(tmp_path):
     adapter = StubAdapter(raises=True)
     report = run_conformance(adapter, sample_action="anything")
@@ -52,7 +59,7 @@ def test_an_adapter_without_a_vocabulary_gets_a_visibly_weaker_report():
     """
     Skipping a check must be recorded, not silently treated as a pass.
     """
-    report = run_conformance(StubAdapter(), sample_action="anything")
+    report = run_conformance(UndeclaredAdapter(), sample_action="anything")
 
     assert report.passed
     assert {check.check_id for check in report.skipped} == {"ADP-005", "ADP-006"}

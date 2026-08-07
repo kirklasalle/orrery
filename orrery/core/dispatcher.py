@@ -4,9 +4,20 @@ Cycle Dispatcher Multi-Stage State Machine.
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Callable, Dict, Mapping, Optional, Awaitable, Any, TYPE_CHECKING
 from orrery.core.config import Settings, get_settings
+from orrery.core import attestation
 from orrery.core.approval import ApprovalGate
+from orrery.core.envelope import EffectEnvelope, EnvelopeGate
+from orrery.core.invariants import Invariant, InvariantMonitor
+from orrery.core.interdiction import (
+    HALT_POLICY,
+    InterdictionGate,
+    Prohibition,
+    runtime_paths,
+)
+from orrery.core.quarantine import ClassificationStore, QuarantineGate
 from orrery.core.types import (
     AttemptRecord,
     ActionRisk,
@@ -50,17 +61,25 @@ class CycleDispatcher:
         settings: Optional[Settings] = None,
         ledger: Optional[EventLedger] = None,
         approval_gate: Optional[ApprovalGate] = None,
+        interdiction_gate: Optional[InterdictionGate] = None,
+        quarantine_gate: Optional[QuarantineGate] = None,
+        envelope_gate: Optional[EnvelopeGate] = None,
+        invariant_monitor: Optional[InvariantMonitor] = None,
     ):
         self.settings = settings or get_settings()
+        # A configuration check that runs after the dispatcher is usable is not a check.
+        self.attestation = attestation.enforce(self.settings)
         self.checkpoint_manager = checkpoint_manager or CheckpointManager(
             max_checkpoints=self.settings.checkpointing.max_checkpoints_in_memory,
             storage_dir=self.settings.checkpointing.storage_dir,
             max_checkpoints_on_disk_per_cycle=self.settings.checkpointing.max_checkpoints_on_disk_per_cycle,
             verify_on_load=self.settings.integrity.verify_on_load,
             require_signature=self.settings.integrity.require_signature,
+            require_asymmetric=self.settings.integrity.require_asymmetric,
         )
         self.critique_engine = critique_engine or SelfCritiqueEngine(
-            threshold=self.settings.critique.threshold
+            threshold=self.settings.critique.threshold,
+            strict_mode=self.settings.critique.strict_mode,
         )
         self.ledger = ledger or EventLedger(
             storage_dir=self.settings.ledger.storage_dir,
@@ -71,6 +90,33 @@ class CycleDispatcher:
             require_approval_for_compensable=self.settings.approval.require_for_compensable,
             require_signed_approval=self.settings.approval.require_signed,
             approval_ttl_seconds=self.settings.approval.ttl_seconds,
+            require_asymmetric_approval=self.settings.approval.require_asymmetric,
+        )
+        self.interdiction_gate = interdiction_gate or InterdictionGate(
+            prohibitions=[
+                Prohibition(**rule.model_dump())
+                for rule in self.settings.interdiction.prohibitions
+            ],
+            protected_paths=(
+                runtime_paths(self.settings)
+                if self.settings.interdiction.protect_runtime_paths
+                else ()
+            ),
+            halt_file=self.settings.interdiction.halt_file,
+        )
+        self.quarantine_gate = quarantine_gate or QuarantineGate(
+            enabled=self.settings.quarantine.enabled,
+            store=ClassificationStore.from_file(Path(self.settings.quarantine.store)),
+            record_path=self.settings.quarantine.record_path,
+            require_signed=self.settings.quarantine.require_signed,
+        )
+        self.envelope_gate = envelope_gate or EnvelopeGate(
+            enforce=self.settings.envelope.enforce,
+            deployment=EffectEnvelope(paths=list(self.settings.envelope.paths)),
+        )
+        self.invariant_monitor = invariant_monitor or InvariantMonitor(
+            invariants=[Invariant(**rule) for rule in self.settings.invariants.rules],
+            on_breach=self.settings.invariants.on_breach,
         )
         self._adapters: Dict[str, "BaseAdapter"] = {}
         self._phase_handlers: Dict[CyclePhase, PhaseHandler] = {}
@@ -123,6 +169,10 @@ class CycleDispatcher:
         other.critique_engine = self.critique_engine
         other.ledger = self.ledger
         other.approval_gate = self.approval_gate
+        other.interdiction_gate = self.interdiction_gate
+        other.quarantine_gate = self.quarantine_gate
+        other.envelope_gate = self.envelope_gate
+        other.invariant_monitor = self.invariant_monitor
         for key, adapter in self._adapters.items():
             other._adapters.setdefault(key, adapter)
 
@@ -132,6 +182,23 @@ class CycleDispatcher:
         """
         context.status = CycleStatus.IN_PROGRESS
         context.step_count += 1
+
+        halt_reason = self.interdiction_gate.halted()
+        if halt_reason is not None:
+            # An operator said stop. That outranks whatever this cycle was told to do, and
+            # it is not a failure of the work, so it is not recorded as one.
+            logger.warning("[Cycle %s] Halted by operator: %s", context.cycle_id, halt_reason)
+            self.ledger.append(
+                "cycle.halted",
+                summary=f"Halted by operator: {halt_reason}",
+                cycle_id=context.cycle_id,
+                tier=context.tier.value,
+                policy_id=HALT_POLICY,
+                phase=context.current_phase.value,
+            )
+            context.lessons.append(f"Cycle halted by operator: {halt_reason}")
+            context.status = CycleStatus.HALTED
+            return context
 
         current_phase = context.current_phase
         handler = self._phase_handlers.get(current_phase)
@@ -167,7 +234,19 @@ class CycleDispatcher:
         elif current_phase == CyclePhase.EXECUTION:
             updated_context.current_phase = CyclePhase.REFLECTION
         elif current_phase == CyclePhase.REFLECTION:
-            critique = updated_context.critiques[-1] if updated_context.critiques else CritiqueResult(score=1.0, passed=True)
+            # No critique means nothing was checked, which is not the same as nothing being
+            # wrong. Defaulting to a pass here would let a silent reflection phase certify
+            # work no one evaluated.
+            critique = (
+                updated_context.critiques[-1]
+                if updated_context.critiques
+                else CritiqueResult(
+                    score=0.0,
+                    passed=False,
+                    reasoning="Reflection produced no critique; the cycle was not evaluated.",
+                    recommendations=["Ensure the reflection handler runs the critique engine."],
+                )
+            )
             self.ledger.append(
                 "critique.evaluated",
                 summary=critique.reasoning,
@@ -214,7 +293,11 @@ class CycleDispatcher:
 
         async def _drive() -> StateContext:
             nonlocal context
-            while context.status not in (CycleStatus.COMPLETED, CycleStatus.FAILED):
+            while context.status not in (
+                CycleStatus.COMPLETED,
+                CycleStatus.FAILED,
+                CycleStatus.HALTED,
+            ):
                 if context.step_count >= limit:
                     logger.error(
                         "[Cycle %s] Step budget of %d exhausted without reaching a terminal state.",
@@ -265,7 +348,41 @@ class CycleDispatcher:
                 approved_by=action.approval.approver if action.approval else None,
                 success=receipt.success,
             )
+            if self._check_invariants(context):
+                break
         return context
+
+    def _check_invariants(self, context: StateContext) -> bool:
+        """
+        Looks for shapes no single action reveals. Returns True when the cycle should stop.
+
+        This runs *after* dispatch, so it cannot prevent the action that breached an
+        invariant. Configured to halt, it stops the next one — containment, not prevention.
+        """
+        breaches = self.invariant_monitor.evaluate(self.ledger.events)
+        if not breaches:
+            return False
+
+        for breach in breaches:
+            logger.error("[Cycle %s] Invariant breached: %s", context.cycle_id, breach.summary)
+            self.ledger.append(
+                "invariant.breached",
+                summary=breach.summary,
+                cycle_id=context.cycle_id,
+                tier=context.tier.value,
+                policy_id=breach.policy_id,
+                invariant_id=breach.invariant_id,
+                observed=breach.observed,
+                limit=breach.limit,
+                window_seconds=breach.window_seconds,
+                halted=self.invariant_monitor.halts,
+            )
+            context.lessons.append(f"Invariant breached: {breach.summary}")
+
+        if self.invariant_monitor.halts:
+            context.status = CycleStatus.HALTED
+            return True
+        return False
 
     async def execute_action(self, action: ActionPayload) -> ExecutionReceipt:
         """
@@ -284,7 +401,37 @@ class CycleDispatcher:
                 ),
             )
 
-        action.risk = self.effective_risk(action, adapter)
+        # The gate ladder: forbidden, then unknown, then needing consent. Each answers a
+        # different question, and a later one must never be able to answer an earlier one's.
+        interdiction = self.interdiction_gate.evaluate(action, getattr(adapter, "root", None))
+        if not interdiction.allowed:
+            return self._refuse(action, interdiction.policy_id, interdiction.reason)
+
+        # A breach is a known violation, not an unknown, so it is refused rather than held.
+        reach = self.envelope_gate.evaluate(action, adapter)
+        if not reach.allowed:
+            return self._refuse(action, reach.policy_id, reach.reason)
+
+        held = self.quarantine_gate.evaluate(action, adapter)
+        if not held.allowed:
+            if held.record is not None:
+                self.quarantine_gate.record(held.record)
+            self.ledger.append(
+                "action.quarantined",
+                summary=f"{action.action_name} held: {held.reason}",
+                policy_id=held.policy_id,
+                action_id=action.action_id,
+                action_name=action.action_name,
+                adapter=action.target_adapter,
+            )
+            return self._refuse(action, held.policy_id, held.reason, ledger=False)
+
+        # A classification describes; it never authorises. The classified risk feeds the
+        # approval gate exactly as an adapter's own declaration would.
+        action.risk = self.effective_risk(
+            action, adapter, held.classification.risk if held.classification else None
+        )
+
         decision = self.approval_gate.evaluate(action)
         if not decision.allowed:
             logger.error("Action %r refused by %s: %s", action.action_name, decision.policy_id, decision.reason)
@@ -319,16 +466,59 @@ class CycleDispatcher:
             receipt.output = {"simulated": True, "adapter": adapter.name, "result": receipt.output}
         return receipt
 
+    def _refuse(
+        self,
+        action: ActionPayload,
+        policy_id: Optional[str],
+        reason: Optional[str],
+        ledger: bool = True,
+    ) -> ExecutionReceipt:
+        logger.error("Action %r refused by %s: %s", action.action_name, policy_id, reason)
+        if ledger:
+            self.ledger.append(
+                "action.refused",
+                summary=f"{action.action_name} refused: {reason}",
+                policy_id=policy_id,
+                action_id=action.action_id,
+                action_name=action.action_name,
+                adapter=action.target_adapter,
+                risk=action.risk.value,
+                approved_by=action.approval.approver if action.approval else None,
+            )
+        return ExecutionReceipt(
+            action_id=action.action_id,
+            action_name=action.action_name,
+            success=False,
+            error=f"Refused by policy {policy_id}: {reason}",
+        )
+
     @staticmethod
-    def effective_risk(action: ActionPayload, adapter: "BaseAdapter") -> ActionRisk:
+    def effective_risk(
+        action: ActionPayload,
+        adapter: "BaseAdapter",
+        classified: Optional[ActionRisk] = None,
+    ) -> ActionRisk:
         """
-        The stricter of what the planner declared and what the adapter declares, so a planner
-        cannot downgrade a delete into something harmless.
+        The strictest of what the planner declared, what the adapter declares, and what an
+        operator classified, so none of the three can downgrade a delete into something
+        harmless.
+
+        An adapter that declares nothing has made no claim at all, which is different from
+        claiming the action is dangerous. Unknown *and* unclassified is assumed irreversible;
+        unknown but classified defers to the operator who actually looked, since their
+        judgement is strictly better information than the absence of one.
         """
+        candidates = [action.risk]
         declared = getattr(adapter, "declared_risks", {}).get(action.action_name)
-        if declared is None:
+        if declared is not None:
+            candidates.append(declared)
+        if classified is not None:
+            candidates.append(classified)
+        if declared is None and classified is None:
+            candidates.append(ActionRisk.IRREVERSIBLE)
+        if len(candidates) == 1:
             return action.risk
-        return max(action.risk, declared, key=lambda risk: _RISK_SEVERITY[risk])
+        return max(candidates, key=lambda risk: _RISK_SEVERITY[risk])
 
     def _record_attempt(self, context: StateContext, critique: CritiqueResult) -> None:
         """

@@ -1,6 +1,6 @@
 app:
   name: "Orrery"
-  version: "0.1.0"
+  version: "0.2.0"
   environment: "development"
 
 dispatcher:
@@ -25,6 +25,7 @@ tiers:
 meta_skills:
   critique:
     threshold: 0.70
+    # Any failed action fails reflection, regardless of how many succeeded.
     strict_mode: false
   checkpointing:
     max_checkpoints_in_memory: 100
@@ -32,8 +33,12 @@ meta_skills:
     storage_dir: ".checkpoints"
   integrity:
     verify_on_load: true
-    # Set ORRERY_CHECKPOINT_KEY and enable this to refuse unsigned checkpoints.
+    # Set ORRERY_CHECKPOINT_KEY (or an operator identity) and enable this to refuse
+    # unsigned checkpoints.
     require_signature: false
+    # Refuse HMAC-signed checkpoints. HMAC proves custody of a shared secret the agent
+    # also holds; only an operator's Ed25519 key proves authorship.
+    require_asymmetric: false
   backtracking:
     max_retries_per_step: 3
 
@@ -54,13 +59,84 @@ approval:
   require_for_compensable: false
   # Set ORRERY_APPROVAL_KEY and enable this to make approval tokens unforgeable.
   require_signed: false
+  # Require an Ed25519 operator signature. A valid HMAC token is refused: it cannot
+  # distinguish the operator from the agent process asking for permission.
+  require_asymmetric: false
   ttl_seconds: 900
 
+# Attestation of the running configuration (Law 10). Binds these settings and the policy
+# registry to an operator's signature; it does not bind the code.
+governance:
+  require_attestation: false
+  attestation_path: "config/attestation.json"
+
+# What the operator forbids, and what the framework protects from itself (Laws 1, 2, 3).
+interdiction:
+  # Create this file to stop every running cycle. A cycle cannot delete it.
+  halt_file: ".halt"
+  # Refuse any action reaching the ledger, checkpoints, attestation, or operator keys.
+  protect_runtime_paths: true
+  # Operator-declared refusals. No approval token overrides one. Each rule must name at
+  # least one of adapters, actions, or paths.
+  prohibitions: []
+  #  - reason: "payroll records are never modified by an agent"
+  #    paths: ["data/payroll"]
+  #  - reason: "no arbitrary execution in production"
+  #    adapters: ["process"]
+
+# Actions the framework cannot characterise are held rather than guessed at (Law 1).
+# Releasing one requires a classification saying what it is - which is not permission to
+# run it. A released action still faces the risk and approval gates.
+quarantine:
+  enabled: false
+  store: "config/classifications.json"
+  record_path: ".quarantine/held.jsonl"
+  # Require the classification to carry an operator's Ed25519 signature.
+  require_signed: false
+
+# The boundary of what anything may reach here (Law 1). An allowlist, so an action invented
+# later is judged by where it lands rather than by whether its name is on a list. Intersected
+# with each adapter's own declared envelope; neither can widen the other.
+envelope:
+  enforce: false
+  paths: []
+  #  - "/srv/orrery/workspace"
+
+# Shapes that no single action reveals (Law 10). This is DETECTION: an invariant is
+# evaluated after the breaching action has already run, so on_breach: halt contains what
+# follows and cannot prevent what happened.
+invariants:
+  on_breach: "record" # or "halt"
+  rules: []
+  #  - invariant_id: "read-storm"
+  #    description: "bulk reads in a short window look like exfiltration"
+  #    window_seconds: 60
+  #    event_types: ["action.executed"]
+  #    match: { action_name: "read_file" }
+  #    max_events: 500
+  #  - invariant_id: "refusal-storm"
+  #    description: "a planner probing its boundaries"
+  #    window_seconds: 60
+  #    event_types: ["action.refused"]
+  #    max_events: 20
+  #  - invariant_id: "approval-velocity"
+  #    description: "irreversible actions approved faster than they could be read"
+  #    window_seconds: 60
+  #    event_types: ["action.executed"]
+  #    match: { risk: "IRREVERSIBLE" }
+  #    max_events: 5
+
 adapters:
-  active:
-    - "openclaw"
-    - "hermes"
-    - "windows_os"
+  # Simulated adapters fabricate their results. Registering one must be a deliberate act,
+  # so this is off: examples/simulated/ needs it switched on.
+  allow_simulated: false
+  filesystem:
+    max_read_bytes: 1048576
+  process:
+    timeout_seconds: 30
+    max_output_bytes: 65536
+    # Leave false: a child process should not inherit the operator's secrets.
+    inherit_environment: false
   openclaw:
     routing_core: "prism_refraction"
     state_engine: "enabled"

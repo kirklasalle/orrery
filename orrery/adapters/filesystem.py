@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Dict, Mapping, Optional
 
 from orrery.adapters.base import BaseAdapter
+from orrery.core.envelope import EffectEnvelope
 from orrery.core.types import ActionPayload, ActionRisk, ExecutionReceipt, StateContext
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,8 @@ class FileSystemAdapter(BaseAdapter):
     """
 
     is_simulation: ClassVar[bool] = False
+
+    target_params: ClassVar[tuple] = ("path", "source", "destination")
 
     declared_risks: ClassVar[Mapping[str, ActionRisk]] = {
         "read_file": ActionRisk.READ_ONLY,
@@ -53,6 +56,9 @@ class FileSystemAdapter(BaseAdapter):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.max_read_bytes = int(self.config.get("max_read_bytes", 1_048_576))
+        # The sandbox is this adapter's own boundary. Declaring it lets a deployment narrow
+        # it further without the adapter knowing anything about that deployment.
+        self.effect_envelope = EffectEnvelope(paths=[str(self.root)])
 
     def _resolve(self, relative: str) -> Path:
         """

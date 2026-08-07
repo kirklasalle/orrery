@@ -1,0 +1,126 @@
+# Hardened profile: every control this framework has, switched on.
+#
+# The default settings.yaml enforces almost nothing, because each control is a deployment
+# decision. This file is the other end of that range, and exists to be *run* rather than
+# admired: tests/test_hardened_profile.py loads it and asserts what actually happens, so
+# the friction of turning everything on is measured rather than assumed.
+#
+# Turning this on requires work outside the file, and that is the point:
+#   1. Create an operator identity   python -m orrery.tools.keygen --operator <name>
+#   2. Export ORRERY_OPERATOR_ID, ORRERY_OPERATOR_PRIVATE_KEY, ORRERY_OPERATOR_KEYRING
+#   3. Set envelope.paths to the region this deployment may touch
+#   4. Approve the configuration  python -m orrery.tools.attest --sign
+#
+# Skip step 4 and nothing starts. That is the intended behaviour, not a misconfiguration.
+
+app:
+  name: "Orrery"
+  version: "0.2.0"
+  environment: "hardened"
+
+dispatcher:
+  default_phase: "PERCEPTION"
+  max_cycle_iterations: 50
+  auto_checkpoint: true
+
+tiers:
+  meta:
+    enabled: true
+    timeout_seconds: 300
+  macro:
+    enabled: true
+    timeout_seconds: 120
+  meso:
+    enabled: true
+    timeout_seconds: 60
+  micro:
+    enabled: true
+    timeout_seconds: 15
+
+meta_skills:
+  critique:
+    threshold: 0.70
+    # Any failed action fails reflection, regardless of how many succeeded.
+    strict_mode: true
+  checkpointing:
+    max_checkpoints_in_memory: 100
+    max_checkpoints_on_disk_per_cycle: 50
+    storage_dir: ".checkpoints"
+  integrity:
+    verify_on_load: true
+    require_signature: true
+    require_asymmetric: true
+  backtracking:
+    max_retries_per_step: 3
+
+delegation:
+  max_depth: 3
+  max_children_per_cycle: 4
+  max_total_cycles: 16
+  enforce_tier_descent: true
+
+ledger:
+  persist: true
+  storage_dir: ".ledger"
+
+approval:
+  require_for_irreversible: true
+  # Not only what cannot be undone: anything needing a compensating action asks first.
+  require_for_compensable: true
+  require_signed: true
+  require_asymmetric: true
+  ttl_seconds: 300
+
+governance:
+  require_attestation: true
+  attestation_path: "config/attestation.json"
+
+interdiction:
+  halt_file: ".halt"
+  protect_runtime_paths: true
+  prohibitions:
+    - reason: "arbitrary program execution is not available in a hardened deployment"
+      adapters: ["process"]
+
+quarantine:
+  enabled: true
+  store: "config/classifications.json"
+  record_path: ".quarantine/held.jsonl"
+  require_signed: true
+
+envelope:
+  enforce: true
+  # Deliberately empty. With enforcement on and no boundary declared, nothing is permitted,
+  # so a deployment must state its own region rather than inherit a guess from this file.
+  paths: []
+
+invariants:
+  on_breach: "halt"
+  rules:
+    - invariant_id: "refusal-storm"
+      description: "a planner repeatedly probing its boundaries"
+      window_seconds: 60
+      event_types: ["action.refused"]
+      max_events: 20
+    - invariant_id: "irreversible-velocity"
+      description: "irreversible actions approved faster than they could be read"
+      window_seconds: 60
+      event_types: ["action.executed"]
+      match: { risk: "IRREVERSIBLE" }
+      max_events: 5
+    - invariant_id: "adapter-breadth"
+      description: "one cycle reaching across an unusual number of adapters"
+      window_seconds: 300
+      event_types: ["action.executed"]
+      distinct_field: "adapter"
+      max_distinct: 4
+
+adapters:
+  # No adapter may declare itself a simulation and still be registered.
+  allow_simulated: false
+  filesystem:
+    max_read_bytes: 1048576
+  process:
+    timeout_seconds: 30
+    max_output_bytes: 65536
+    inherit_environment: false
