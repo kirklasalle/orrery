@@ -68,6 +68,6 @@ class OpenClawAdapter(BaseAdapter):
     def _build_protocol_headers(self, action: ActionPayload) -> Dict[str, str]:
         return {
             "X-OpenClaw-Routing": self.routing_core,
-            "X-Cognition-Tier": action.tier.value,
+            "X-Orrery-Tier": action.tier.value,
             "X-Action-ID": action.action_id,
         }

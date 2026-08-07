@@ -53,8 +53,53 @@ jobs:
             - name: Verify governance claims match the code
               run: pytest tests/test_governance.py -q
 
+            # Fails if the 10 Laws disagree between charter documents, or if one of them was
+            # edited without being re-pinned in config/charter_manifest.json.
+            - name: Verify the charter is consistent and unchanged
+              run: python -m orrery.tools.charter
+
+            # Attacks each gate from a hostile adapter's position. Several of these assert
+            # that an attack still succeeds; those are the documented limits, and the suite
+            # fails if GOVERNANCE.md stops describing them.
+            - name: Adversarial review of the gate ladder
+              run: pytest tests/test_adversarial.py -q
+
+            # Loads config/hardened.yaml with every control on and asserts what happens,
+            # including that nothing starts until the configuration is signed for.
+            - name: Verify the hardened profile behaves as documented
+              run: pytest tests/test_hardened_profile.py -q
+
             # Fails if any bundled adapter breaks the reporting contract: fabricating success
             # for work it did not do, raising instead of returning a failed receipt, or
             # misdeclaring an action's risk.
             - name: Verify adapters conform to the reporting contract
               run: pytest tests/test_adapter_conformance.py -q
+
+    benchmark:
+        name: Backtracking benchmark
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-python@v5
+              with:
+                  python-version: "3.10"
+
+            - name: Install
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -e ".[dev]"
+
+            # Measures the reliability claim against a control that can falsify it. --strict
+            # fails the build if any run reports COMPLETED for a goal the filesystem says was
+            # not reached, or if informed rollback stops beating uninformed rollback.
+            - name: Run the benchmark
+              run: python -m orrery.bench --strict --json bench-report.json
+
+            - name: Assert the harness still measures honestly
+              run: pytest tests/test_bench.py -q
+
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: benchmark-report
+                  path: bench-report.json

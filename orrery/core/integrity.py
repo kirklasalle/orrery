@@ -6,9 +6,15 @@ predecessor, so a cycle's history is a hash chain: altering any past checkpoint 
 every link after it.
 
 Honest limits. An unsigned chain detects corruption and casual editing, not a motivated
-attacker, who can simply recompute the chain. Set ORRERY_CHECKPOINT_KEY to add an
-HMAC-SHA256 signature, which an attacker cannot forge without the key, and set
-`integrity.require_signature` to refuse unsigned checkpoints outright.
+attacker, who can simply recompute the chain.
+
+Two signing modes, and they do not prove the same thing. `ORRERY_CHECKPOINT_KEY` adds an
+HMAC-SHA256 signature: forgery then requires the secret, but every party that can verify
+also holds it, so it proves custody rather than authorship. Configure an operator identity
+(`ORRERY_OPERATOR_ID` + `ORRERY_OPERATOR_PRIVATE_KEY`) and the chain is signed with
+Ed25519 instead, which the framework can verify from a public keyring it could not sign
+with. Set `integrity.require_signature` to refuse unsigned checkpoints, and
+`integrity.require_asymmetric` to refuse HMAC ones.
 """
 
 from __future__ import annotations
@@ -21,6 +27,8 @@ import os
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
+
+from orrery.core import signing
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +86,16 @@ def get_signing_key() -> Optional[bytes]:
 
 
 def sign_digest(digest: str, key: Optional[bytes] = None) -> Optional[str]:
+    """
+    Signs with the operator's Ed25519 key when one is configured, and falls back to HMAC
+    only when no operator identity exists. The stronger proof is never silently replaced
+    by the weaker one.
+    """
+    if key is None:
+        signer = signing.signer_from_env()
+        if signer is not None:
+            return signer.sign(digest)
+
     key = key if key is not None else get_signing_key()
     if not key:
         return None
@@ -85,10 +103,22 @@ def sign_digest(digest: str, key: Optional[bytes] = None) -> Optional[str]:
 
 
 def signature_matches(digest: str, signature: Optional[str], key: Optional[bytes] = None) -> bool:
-    expected = sign_digest(digest, key)
-    if expected is None or signature is None:
+    if signature is None:
+        return False
+
+    if signing.is_asymmetric(signature):
+        return signing.keyring_from_env().verify(digest, signature)
+
+    expected = _hmac_digest(digest, key if key is not None else get_signing_key())
+    if expected is None:
         return False
     return hmac.compare_digest(expected, signature)
+
+
+def _hmac_digest(digest: str, key: Optional[bytes]) -> Optional[str]:
+    if not key:
+        return None
+    return hmac.new(key, digest.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def seal(checkpoint: Any, prev_hash: Optional[str], key: Optional[bytes] = None) -> Any:
@@ -102,7 +132,12 @@ def seal(checkpoint: Any, prev_hash: Optional[str], key: Optional[bytes] = None)
     return checkpoint
 
 
-def verify(checkpoint: Any, require_signature: bool = False, key: Optional[bytes] = None) -> Optional[str]:
+def verify(
+    checkpoint: Any,
+    require_signature: bool = False,
+    key: Optional[bytes] = None,
+    require_asymmetric: bool = False,
+) -> Optional[str]:
     """
     Returns None when the checkpoint is intact, or a human-readable reason when it is not.
     """
@@ -116,10 +151,18 @@ def verify(checkpoint: Any, require_signature: bool = False, key: Optional[bytes
             f"(stored {checkpoint.content_hash[:12]}..., computed {expected[:12]}...)"
         )
 
-    if require_signature:
+    if require_asymmetric and not signing.is_asymmetric(checkpoint.signature):
+        return (
+            f"checkpoint {checkpoint.checkpoint_id} is not signed with an operator key; "
+            f"an HMAC signature proves custody of a shared secret, not authorship"
+        )
+
+    if require_signature or require_asymmetric:
         if not signature_matches(checkpoint.content_hash, checkpoint.signature, key):
             return f"checkpoint {checkpoint.checkpoint_id} signature is missing or invalid"
-    elif checkpoint.signature is not None and get_signing_key() is not None:
+    elif checkpoint.signature is not None and (
+        get_signing_key() is not None or signing.is_asymmetric(checkpoint.signature)
+    ):
         if not signature_matches(checkpoint.content_hash, checkpoint.signature, key):
             return f"checkpoint {checkpoint.checkpoint_id} signature does not match the configured key"
 

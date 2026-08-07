@@ -27,7 +27,7 @@ logger = logging.getLogger("demo_cycle")
 
 
 async def run_success_demo():
-    logger.info("=== STARTING SUCCESSFUL NESTED COGNITION CYCLE DEMO ===")
+    logger.info("=== STARTING SUCCESSFUL NESTED ORRERY CYCLE DEMO ===")
     
     initial_context = StateContext(
         goal="Automate enterprise data ingestion and UI verification",

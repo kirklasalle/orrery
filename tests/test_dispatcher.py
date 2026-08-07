@@ -4,14 +4,58 @@ Tests for CycleDispatcher state machine transitions across 4 phases.
 
 import asyncio
 from orrery.core.dispatcher import CycleDispatcher
-from orrery.core.types import StateContext, CyclePhase, CycleStatus, CycleTier
-from tests.conftest import StubAdapter
+from orrery.core.types import ActionPayload, ActionRisk, StateContext, CyclePhase, CycleStatus, CycleTier
+from tests.conftest import StubAdapter, UndeclaredAdapter
 
 
 def _dispatcher_with_adapter(**kwargs) -> CycleDispatcher:
     dispatcher = CycleDispatcher()
     dispatcher.register_adapter(StubAdapter(**kwargs), name="default")
     return dispatcher
+
+
+def test_an_undeclared_action_is_treated_as_irreversible():
+    """
+    RISK-CLASS. GOVERNANCE.md has claimed "undeclared actions are treated as irreversible"
+    since Gate 3a, and `BaseAdapter.risk_for()` implemented it — but the dispatcher read
+    `declared_risks` directly and fell back to the *planner's* risk, which defaults to
+    REVERSIBLE. Undeclared actions were sailing through as reversible while the governance
+    document said the opposite.
+    """
+
+    async def run():
+        dispatcher = CycleDispatcher()
+        adapter = UndeclaredAdapter()
+        dispatcher.register_adapter(adapter, name="undeclared")
+
+        action = ActionPayload(action_name="do_something_nobody_declared", target_adapter="undeclared")
+        assert action.risk is ActionRisk.REVERSIBLE, "the planner's optimistic default"
+
+        receipt = await dispatcher.execute_action(action)
+
+        assert action.risk is ActionRisk.IRREVERSIBLE, "an unclassified action is not a safe one"
+        assert not receipt.success
+        assert "RISK-001" in receipt.error
+
+    asyncio.run(run())
+
+
+def test_a_declared_risk_is_not_inflated_to_irreversible():
+    """
+    The fail-safe applies to silence, not to every action. An adapter that says READ_ONLY is
+    believed.
+    """
+
+    async def run():
+        dispatcher = _dispatcher_with_adapter()
+        action = ActionPayload(action_name="anything", target_adapter="default")
+
+        receipt = await dispatcher.execute_action(action)
+
+        assert action.risk is ActionRisk.REVERSIBLE
+        assert receipt.success, receipt.error
+
+    asyncio.run(run())
 
 
 def test_dispatcher_single_step_transitions():

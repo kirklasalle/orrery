@@ -3,8 +3,11 @@ Base Adapter Abstract Interface.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Dict, Mapping, Optional
+from typing import Any, ClassVar, Dict, Mapping, Optional, Tuple, TYPE_CHECKING
 from orrery.core.types import ActionPayload, ActionRisk, ExecutionReceipt, StateContext
+
+if TYPE_CHECKING:
+    from orrery.core.envelope import EffectEnvelope
 
 
 class BaseAdapter(ABC):
@@ -17,6 +20,14 @@ class BaseAdapter(ABC):
 
     # Risk class per supported action name. Anything unlisted is treated as irreversible.
     declared_risks: ClassVar[Mapping[str, ActionRisk]] = {}
+
+    # The boundary of what this adapter will ever reach. Set on the instance when the
+    # boundary depends on construction, as a sandbox root does.
+    effect_envelope: Optional["EffectEnvelope"] = None
+
+    # Which parameters name a location. None means undeclared, which envelope enforcement
+    # refuses; an empty tuple states that this adapter's actions name none.
+    target_params: ClassVar[Optional[Tuple[str, ...]]] = None
 
     def __init__(self, name: str, config: Optional[Dict[str, Any]] = None):
         self.name = name

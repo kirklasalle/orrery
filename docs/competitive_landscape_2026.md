@@ -7,7 +7,7 @@
 
 > ℹ️ **Rename note.** This report was written under the project's original name, *Cognition Cycles*. Its §"Naming collision" finding was **acted on**: the project was renamed to **Orrery** and the package moved from `src/` to `orrery/`. The analysis below is preserved as written; only file links have been repointed.
 
-> ⚠️ **Note on the prior document.** [market_research_audit.md](market_research_audit.md) contains figures (e.g. "$5.1B in 2024 to $47.2B by 2030, CAGR 44.8%") that are **not traceable to any published source**. This report replaces those with cited, verifiable numbers. The old file should be superseded or annotated before it is ever shown externally.
+> ⚠️ **Note on the prior document.** [market_research_audit.md](archive/2026-07-market-research-audit.md) contains figures (e.g. "$5.1B in 2024 to $47.2B by 2030, CAGR 44.8%") that are **not traceable to any published source**. This report replaces those with cited, verifiable numbers. That file has since been moved to `docs/archive/` and banner-marked SUPERSEDED — DO NOT CITE.
 
 ---
 

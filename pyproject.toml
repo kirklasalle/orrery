@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orrery"
-version = "0.1.0"
+version = "0.2.0"
 description = "Orrery: stateful multi-tier cognitive cycles for long-horizon agents"
 readme = "README.md"
 license = { text = "MIT" }
@@ -29,10 +29,16 @@ Repository = "https://github.com/kirklasalle/orrery"
 Changelog = "https://github.com/kirklasalle/orrery/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
+# Ed25519 operator signing. Optional at runtime: without it Orrery falls back to HMAC and
+# says so, and refuses outright if a policy requires asymmetric proof.
+signing = [
+    "cryptography>=42.0",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
+    "cryptography>=42.0",
 ]
 
 [tool.setuptools.packages.find]

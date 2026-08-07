@@ -40,6 +40,48 @@ POLICIES: Tuple[Policy, ...] = (
         "adapter and the operator, not the cycle engine.",
     ),
     Policy(
+        policy_id="LAW1-PROHIBIT",
+        law=1,
+        status=EnforcementStatus.PARTIAL,
+        predicate="Actions an operator has declared forbidden are refused, and no approval "
+        "overrides them.",
+        mechanism="InterdictionGate matches each action against operator-declared prohibitions "
+        "by adapter, action name, and path before the approval gate runs, so a prohibited action "
+        "cannot be authorized at execution time. This does not give Orrery a harm model: it "
+        "refuses what someone who can judge harm has written down, and is only as good as what "
+        "they thought to write.",
+        test="tests/test_interdiction.py::test_a_prohibited_action_is_refused_even_with_approval",
+    ),
+    Policy(
+        policy_id="LAW1-ENVELOPE",
+        law=1,
+        status=EnforcementStatus.PARTIAL,
+        predicate="An action is judged by what it reaches, not by whether its name appears on "
+        "a list.",
+        mechanism="An adapter declares the boundary of what it will ever touch and which of its "
+        "parameters name a location; a deployment declares what anything may touch here. Both "
+        "must permit, so the effective envelope is their intersection and can only be narrower "
+        "than either. A breach is a known violation, so it is refused rather than held. Off by "
+        "default. Partial because reach is inferred from the values an action carries: an "
+        "adapter that opens a socket or writes through a handle it already holds is outside an "
+        "envelope's view, so this bounds where an action points, not what it does.",
+        test="tests/test_envelope.py::test_an_action_nobody_enumerated_is_judged_by_where_it_lands",
+    ),
+    Policy(
+        policy_id="LAW1-QUARANTINE",
+        law=1,
+        status=EnforcementStatus.PARTIAL,
+        predicate="An action the framework cannot characterise is held, not guessed at.",
+        mechanism="QuarantineGate holds any action whose target adapter never declared it, and "
+        "releases it only against an operator Classification stating what the action is. A "
+        "classification describes and never authorises: a released action still faces the risk "
+        "and approval gates unchanged, so one classified IRREVERSIBLE still needs a token bound "
+        "to each specific action. Partial because it is off by default; with quarantine "
+        "disabled an undeclared action falls back to being treated as IRREVERSIBLE, which is a "
+        "safe guess but still a guess.",
+        test="tests/test_quarantine.py::test_a_classification_is_not_an_authorisation",
+    ),
+    Policy(
         policy_id="RISK-CLASS",
         law=1,
         status=EnforcementStatus.PARTIAL,
@@ -81,10 +123,24 @@ POLICIES: Tuple[Policy, ...] = (
         law=2,
         status=EnforcementStatus.PARTIAL,
         predicate="An authorization can be shown to have come from a human, not from the agent.",
-        mechanism="HMAC-SHA256 token signing when ORRERY_APPROVAL_KEY is set and "
-        "approval.require_signed is on. Off by default: without it, any code in the process can "
-        "mint a token, so an unsigned token documents intent rather than proving consent.",
-        test="tests/test_filesystem_adapter.py::test_signed_approval_passes_and_a_forged_one_does_not",
+        mechanism="Ed25519 per-operator signing when ORRERY_OPERATOR_ID and "
+        "ORRERY_OPERATOR_PRIVATE_KEY are set: the framework holds only the public keyring, so it "
+        "can verify an approval without being able to mint one, and a token's signing key must "
+        "match the approver it names. HMAC via ORRERY_APPROVAL_KEY remains supported but proves "
+        "custody of a shared secret rather than authorship. Partial because both are off by "
+        "default, and an unsigned token documents intent rather than proving consent.",
+        test="tests/test_signing.py::test_operator_signed_approval_verifies_and_a_forged_one_does_not",
+    ),
+    Policy(
+        policy_id="RISK-005",
+        law=2,
+        status=EnforcementStatus.ENFORCED,
+        predicate="When asymmetric proof is required, a shared-secret signature is not accepted "
+        "in its place.",
+        mechanism="With approval.require_asymmetric set, ApprovalGate refuses any token not "
+        "carrying an Ed25519 operator signature, including a valid HMAC one, because HMAC cannot "
+        "distinguish the operator from the agent process.",
+        test="tests/test_signing.py::test_hmac_approval_is_refused_when_asymmetric_is_required",
     ),
     Policy(
         policy_id="RISK-004",
@@ -96,11 +152,34 @@ POLICIES: Tuple[Policy, ...] = (
         test="tests/test_filesystem_adapter.py::test_expired_approval_is_refused",
     ),
     Policy(
+        policy_id="LAW2-HALT",
+        law=2,
+        status=EnforcementStatus.ENFORCED,
+        predicate="An operator instruction to stop takes precedence over the goal in progress.",
+        mechanism="The dispatcher reads the halt file before every phase and stops the cycle as "
+        "HALTED rather than FAILED, because an operator stopping work is not the work failing. "
+        "The halt file is a protected path, so a running cycle cannot clear its own stop order.",
+        test="tests/test_interdiction.py::test_a_halt_stops_the_cycle_and_cannot_be_cleared_by_it",
+    ),
+    Policy(
         policy_id="LAW3-SELF",
         law=3,
         status=EnforcementStatus.NOT_ENFORCED,
         predicate="Self-preservation is subordinate to Laws 1 and 2.",
         mechanism="None. Orrery has no self-preservation drive to subordinate.",
+    ),
+    Policy(
+        policy_id="LAW3-SUBORDINATE",
+        law=3,
+        status=EnforcementStatus.ENFORCED,
+        predicate="A cycle may not act on the machinery that audits or constrains it.",
+        mechanism="InterdictionGate refuses any action whose path parameters reach the ledger, "
+        "the checkpoint store, the attestation, the operator keyring, or the halt file — checked "
+        "in both directions, since deleting a parent destroys a child. Orrery has no "
+        "self-preservation drive to subordinate, but a cycle that could erase its own record or "
+        "rewrite its own limits would have the means to act against an operator regardless of "
+        "whether it had the motive.",
+        test="tests/test_interdiction.py::test_an_action_cannot_reach_the_ledger",
     ),
     Policy(
         policy_id="LAW4-ADAPTER",
@@ -176,6 +255,18 @@ POLICIES: Tuple[Policy, ...] = (
         test="tests/test_filesystem_adapter.py::test_write_then_read_touches_the_real_filesystem",
     ),
     Policy(
+        policy_id="LAW7-GOAL",
+        law=7,
+        status=EnforcementStatus.PARTIAL,
+        predicate="A cycle does not certify a goal it has not checked.",
+        mechanism="SelfCritiqueEngine accepts a goal_check that inspects the world. If it reports "
+        "the goal unmet, reflection fails regardless of how many actions succeeded, and a check "
+        "that raises counts as unverified. With no goal check supplied the result records "
+        "goal_verified=None and says the score reflects adapter outcomes only. Partial because "
+        "the check is the operator's to write: Orrery cannot infer what the goal means.",
+        test="tests/test_critique.py::test_goal_check_overrides_a_passing_success_ratio",
+    ),
+    Policy(
         policy_id="LAW8-EQUITY",
         law=8,
         status=EnforcementStatus.NOT_ENFORCED,
@@ -214,9 +305,25 @@ POLICIES: Tuple[Policy, ...] = (
         law=9,
         status=EnforcementStatus.PARTIAL,
         predicate="The audit record is cryptographically attributable.",
-        mechanism="HMAC-SHA256 signing when ORRERY_CHECKPOINT_KEY is set. Off by default, and a "
-        "shared symmetric key proves custody, not authorship.",
-        test="tests/test_integrity.py::test_signature_is_required_when_configured",
+        mechanism="Ed25519 signing with the configured operator identity, verified against a "
+        "public keyring the framework cannot sign with; HMAC-SHA256 via ORRERY_CHECKPOINT_KEY "
+        "when no operator key is present. integrity.require_asymmetric refuses HMAC-signed "
+        "checkpoints outright. Partial because signing is off by default.",
+        test="tests/test_signing.py::test_checkpoints_are_signed_with_the_operator_key",
+    ),
+    Policy(
+        policy_id="LAW9-HINDSIGHT",
+        law=9,
+        status=EnforcementStatus.PARTIAL,
+        predicate="The record of what was tried and abandoned is used, not merely kept.",
+        mechanism="orrery/core/hindsight.py reads the ledger — which survives rollback, so it "
+        "retains the attempts state discarded — and drafts prohibitions and classifications for "
+        "recurring refusals, holds, and failures, each carrying the ledger sequences that "
+        "justify it. Partial, and deliberately so: a proposal is inert. It has no signature and "
+        "no path into enforcement, and a classification's risk is left unset because repetition "
+        "shows an action recurs, never what it does. Enacting one is an operator act through the "
+        "ordinary signing path.",
+        test="tests/test_hindsight.py::test_a_proposal_is_inert",
     ),
     Policy(
         policy_id="LAW9-MONO",
@@ -286,13 +393,46 @@ POLICIES: Tuple[Policy, ...] = (
         test="tests/test_dispatcher.py::test_run_full_cycle_honours_step_budget",
     ),
     Policy(
+        policy_id="LAW10-CHARTER",
+        law=10,
+        status=EnforcementStatus.ENFORCED,
+        predicate="The 10 Laws cannot be changed, or fall out of agreement with each other, "
+        "without the change being visible.",
+        mechanism="One charter document is canonical; the others are compared to it Law by Law, "
+        "tolerant of case and punctuation and intolerant of word choice. Every charter file's "
+        "digest is pinned in config/charter_manifest.json and checked in CI, and the combined "
+        "charter digest is part of the configuration attestation, so approving a configuration "
+        "approves the charter it runs under. This detects disagreement and unreviewed edits; it "
+        "says nothing about whether the Laws are obeyed.",
+        test="tests/test_charter.py::test_every_document_states_the_same_ten_laws",
+    ),
+    Policy(
+        policy_id="LAW10-INVARIANT",
+        law=10,
+        status=EnforcementStatus.PARTIAL,
+        predicate="Behaviour that is only pathological in aggregate is visible.",
+        mechanism="InvariantMonitor evaluates operator-declared limits over a time window of "
+        "the ledger, which retains attempts that backtracking discarded, and records a breach "
+        "as a ledger event; configured to halt, it stops the cycle. Partial for two reasons and "
+        "the second is not a technicality: it is off by default, and it is DETECTION. An "
+        "invariant is evaluated after the breaching action has already run, so it can contain "
+        "what follows but cannot prevent what happened.",
+        test="tests/test_invariants.py::test_an_invariant_cannot_prevent_the_action_that_breached_it",
+    ),
+    Policy(
         policy_id="LAW10-APPROVAL",
         law=10,
-        status=EnforcementStatus.NOT_ENFORCED,
+        status=EnforcementStatus.PARTIAL,
         predicate="Core directives may only be modified with cryptographically secured "
         "Governance approval.",
-        mechanism="None. Settings and policies are ordinary files; there is no signed-approval "
-        "workflow and no attestation of the running configuration.",
+        mechanism="The settings that bound Orrery's authority — approval, integrity, delegation, "
+        "critique thresholds, simulated-adapter permission — are digested together with the "
+        "governance registry itself, and config/attestation.json carries an operator's Ed25519 "
+        "signature over that digest. With governance.require_attestation set, a dispatcher "
+        "refuses to construct when the running configuration does not match a valid attestation. "
+        "Partial, and narrowly so: this binds configuration and policy declarations, not the "
+        "code. Anyone able to edit the source can delete the check.",
+        test="tests/test_attestation.py::test_dispatcher_refuses_to_start_on_an_unattested_configuration",
     ),
     Policy(
         policy_id="DEL-000",

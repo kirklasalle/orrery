@@ -4,6 +4,8 @@ Tests for the append-only event ledger (Law 9).
 
 import asyncio
 
+import pytest
+
 from orrery.core.config import LedgerSettings, Settings
 from orrery.core.dispatcher import CycleDispatcher
 from orrery.core.ledger import EventLedger
@@ -74,11 +76,37 @@ def test_ledger_survives_backtracking(tmp_path):
 
 
 def test_ledger_records_simulation_adapters(tmp_path):
-    dispatcher = _dispatcher(tmp_path)
-    registrations = [e for e in dispatcher.ledger.events if e.event_type == "adapter.registered"]
+    """
+    LAW7-SIM. This test previously registered a *real* adapter and asserted
+    `is_simulation is False`, so the policy it backs was enforced by a test that never
+    exercised it. Simulated work must be distinguishable from real work in the record.
+    """
+    from examples.simulated.hermes import HermesAdapter
+    from orrery.core.config import Settings
 
-    assert len(registrations) == 1
-    assert registrations[0].data["is_simulation"] is False
+    dispatcher = _dispatcher(tmp_path)
+    real = [e for e in dispatcher.ledger.events if e.event_type == "adapter.registered"]
+    assert len(real) == 1
+    assert real[0].data["is_simulation"] is False
+
+    dispatcher.settings = dispatcher.settings.model_copy(
+        update={"allow_simulated_adapters": True}
+    )
+    dispatcher.register_adapter(HermesAdapter())
+
+    registrations = [e for e in dispatcher.ledger.events if e.event_type == "adapter.registered"]
+    assert registrations[-1].data["is_simulation"] is True
+    assert registrations[-1].data["adapter"] == "hermes"
+    assert registrations[-1].policy_id == "LAW7-SIM"
+
+
+def test_a_simulated_adapter_is_refused_unless_explicitly_allowed(tmp_path):
+    from examples.simulated.hermes import HermesAdapter
+
+    dispatcher = _dispatcher(tmp_path)
+
+    with pytest.raises(ValueError, match="simulation"):
+        dispatcher.register_adapter(HermesAdapter())
 
 
 def test_ledger_persists_to_disk_and_reloads(tmp_path):

@@ -107,7 +107,14 @@ Each cycle step transitions deterministically through four phases:
 ## 7. Non-Functional & Quality Requirements
 
 - **Python Compatibility**: Python 3.10+ (verified against 3.10 via the repository `.venv`).
-- **Test Coverage**: **Measured 90% line coverage of `orrery/`** (1380 statements, 156 tests) as of August 7, 2026. Target: $\geq 90\%$, with behavioral assertions rather than line execution alone.
+- **Test Coverage**: **Measured 91% line coverage of `orrery/`** (2,993 statements, 331 tests, 1
+  skipped) as of August 7, 2026.
+- **Behavioural Evidence**: Line coverage measures which lines ran, not whether anything worked —
+  this project has already shipped 85% coverage alongside a critique that certified goals it never
+  checked. The load-bearing evidence is [`orrery/bench`](../orrery/bench), which runs real tasks
+  against a real adapter, **grades every run by reading the disk afterwards**, and compares
+  informed rollback against a control that can falsify the claim. Its `false success` count — runs
+  reporting `COMPLETED` for a goal the filesystem says was not reached — is gated at zero in CI.
 - **Async Execution**: Non-blocking `async/await` throughout all phase handlers and cycle runners.
 - **Code Quality**: Strict type hint enforcement, Pydantic v2 validation, zero global state mutations.
 - **Path Safety**: All checkpoint identifiers are validated as canonical UUIDs and all checkpoint I/O is confined to the configured storage root.
