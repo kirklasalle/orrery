@@ -15,17 +15,26 @@ An orrery is a clockwork model of nested orbits turning at different periods —
 >
 > This repository is a **working architectural scaffold**, not a production system. Read this before evaluating:
 >
-> - The three bundled adapters are **simulations**. They perform no network, LLM, or OS calls, and
->   declare themselves via `is_simulation`. Registering one logs a warning and tags every receipt
->   with `simulated: True`. **You must supply a real adapter to do real work.**
+> - `FileSystemAdapter` is **real**: it reads, writes, moves, and deletes actual files inside a
+>   sandbox root it refuses to escape. The three legacy adapters (`openclaw`, `hermes`,
+>   `windows_os`) remain **simulations**. They perform no network, LLM, or OS calls, declare
+>   themselves via `is_simulation`, and every one of their receipts is tagged `simulated: True`.
 > - An action with no registered adapter now produces a **failed** receipt rather than a fabricated
 >   successful one, so an unwired framework reports failure instead of silent success.
-> - Governance: **5 of the 10 Laws have no runtime control.** Laws 6, 7, 9, and 10 do — data-path
->   containment, no fabricated success, an append-only hash-linked ledger, and authorized,
->   depth-and-budget-bounded delegation. What is and is not enforced, and by which test, is
+> - Every adapter is checked against the **Adapter Conformance Kit** in CI: receipts must echo the
+>   request, unsupported actions must fail rather than raise or falsely succeed, and no adapter may
+>   stamp its own output as simulated.
+> - Actions carry a **risk class**, and the dispatcher refuses to run anything classified
+>   `IRREVERSIBLE` without an `ApprovalToken` bound to that exact action. A planner cannot downgrade
+>   an action's risk below what its adapter declares.
+> - Governance: **3 of the 10 Laws have no runtime control.** Laws 1 and 2 are *partial* — Orrery
+>   has no harm model, but it will not perform what it cannot undo without explicit consent. Laws 4,
+>   6, 7, 9, and 10 have runtime controls. What is and is not enforced, and by which test, is
 >   documented in [GOVERNANCE.md](GOVERNANCE.md) and gated in CI.
 > - Checkpoints are hash-chained and verified on load. Signing is available via
->   `ORRERY_CHECKPOINT_KEY` but is **off by default**, and uses a shared symmetric key.
+>   `ORRERY_CHECKPOINT_KEY` but is **off by default**, and uses a shared symmetric key. The same
+>   caveat applies to approval tokens and `ORRERY_APPROVAL_KEY`: **an unsigned approval token
+>   documents intent, it does not prove consent.**
 >
 > A full technical and governance audit — including reproduced defects, severity ratings, and a
 > sequenced remediation plan — is published at [docs/audit_2026-08-06.md](docs/audit_2026-08-06.md).
@@ -54,7 +63,7 @@ orrery/
 ├── orrery/
 │   ├── core/                     # State Machine Dispatcher, CheckpointManager, SelfCritiqueEngine
 │   ├── cycles/                   # Hierarchical Tiers (MetaCycle, MacroCycle, MesoCycle, MicroCycle)
-│   └── adapters/                 # Adapters (OpenClaw, Hermes, Windows OS Agent)
+│   └── adapters/                 # Adapters (FileSystem, OpenClaw, Hermes, Windows OS Agent)
 ├── tests/                        # Pytest Suite
 ├── CHANGELOG.md
 ├── LICENSE
@@ -91,8 +100,11 @@ Transitions deterministically through:
 
 ### 4. Enterprise Integration Adapters
 
-> ⚠️ All three adapters are currently **simulated stubs** returning fixed responses. See the audit.
+> ⚠️ Only `FileSystemAdapter` performs real I/O. The other three are **simulated stubs** returning
+> fixed responses; benchmarks run against them measure the state machine, not the world.
 
+- **[FileSystemAdapter](orrery/adapters/filesystem.py)**: Real sandboxed file I/O. The reference
+  implementation for adapter authors, and the source of the first genuinely irreversible action.
 - **[OpenClawAdapter](orrery/adapters/openclaw.py)**: Prism Refraction routing core and state engine.
 - **[HermesAdapter](orrery/adapters/hermes.py)**: Hermes / Console backend reasoning harness and evaluation gates.
 - **[WindowsOSAdapter](orrery/adapters/windows_os.py)**: Windows OS Agent desktop UI state controller.

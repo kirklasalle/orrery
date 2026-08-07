@@ -48,6 +48,14 @@ ledger:
   persist: true
   storage_dir: ".ledger"
 
+# Human-in-the-loop consent for actions the framework cannot undo (Laws 1, 2).
+approval:
+  require_for_irreversible: true
+  require_for_compensable: false
+  # Set ORRERY_APPROVAL_KEY and enable this to make approval tokens unforgeable.
+  require_signed: false
+  ttl_seconds: 900
+
 adapters:
   active:
     - "openclaw"

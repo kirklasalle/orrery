@@ -1,9 +1,15 @@
 # Orrery: Product Requirements Document (PRD)
 
-**Version:** 1.0.0  
-**Status:** Approved / Active  
-**Author:** Antigravity Engineering & System Architecture  
+**Version:** 0.1.0  
+**Status:** Draft — tracks an early-stage reference implementation  
+**Author:** Kirk LaSalle  
 **Target Repository:** `https://github.com/kirklasalle/orrery`
+
+> **Correction (August 7, 2026):** this document previously declared itself version 1.0.0,
+> "Approved / Active", and attributed to "Antigravity Engineering & System Architecture". No
+> such approval took place and no such organization authored it. The version has been aligned
+> with the package (0.1.0) and the CHANGELOG. Leaving the original header in place would have
+> been the kind of unearned claim Law 7 forbids.
 
 ---
 
@@ -101,7 +107,7 @@ Each cycle step transitions deterministically through four phases:
 ## 7. Non-Functional & Quality Requirements
 
 - **Python Compatibility**: Python 3.10+ (verified against 3.10 via the repository `.venv`).
-- **Test Coverage**: **Measured 89% line coverage of `orrery/`** (1085 statements, 113 tests) as of August 6, 2026. Target: $\geq 90\%$, with behavioral assertions rather than line execution alone.
+- **Test Coverage**: **Measured 90% line coverage of `orrery/`** (1380 statements, 156 tests) as of August 7, 2026. Target: $\geq 90\%$, with behavioral assertions rather than line execution alone.
 - **Async Execution**: Non-blocking `async/await` throughout all phase handlers and cycle runners.
 - **Code Quality**: Strict type hint enforcement, Pydantic v2 validation, zero global state mutations.
 - **Path Safety**: All checkpoint identifiers are validated as canonical UUIDs and all checkpoint I/O is confined to the configured storage root.

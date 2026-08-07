@@ -9,12 +9,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Gate 3a — the first real adapter, and a gate on what cannot be undone.**
+  - `orrery/adapters/filesystem.py` — `FileSystemAdapter`, the **first non-simulation adapter**.
+    It reads, writes, appends, moves, and deletes real files inside a sandbox root, refusing
+    absolute paths and any `..` traversal that escapes it. `perceive_environment` reports real
+    disk usage and directory contents. All I/O runs on a worker thread. This matters beyond the
+    adapter itself: risk classification was theatre until `delete_file` existed and could
+    genuinely destroy something.
+  - `ActionRisk` (`READ_ONLY` / `REVERSIBLE` / `COMPENSABLE` / `IRREVERSIBLE`) and `ApprovalToken`
+    on `ActionPayload`. Adapters declare a risk per action name via `declared_risks`; an action
+    the adapter does not declare is treated as `IRREVERSIBLE`, not as harmless.
+  - `orrery/core/approval.py` — `ApprovalGate` refuses `IRREVERSIBLE` actions that carry no
+    approval (`RISK-001`), tokens minted for a different action (`RISK-002`), unsigned tokens when
+    signing is required (`RISK-003`), and expired tokens (`RISK-004`). Every refusal is appended
+    to the ledger as `action.refused` with the deciding policy ID (`RISK-000`).
+  - `CycleDispatcher` takes the **stricter** of the planner's declared risk and the adapter's, so
+    a plan cannot relabel a delete as harmless to slip past the gate (`RISK-CLASS`).
+  - `orrery/adapters/conformance.py` — the **Adapter Conformance Kit** (`ADP-001`…`ADP-012`),
+    run in CI against every bundled adapter and offered to third-party adapter authors. It
+    verifies that receipts echo the request, that unsupported actions fail rather than raise or
+    falsely succeed, that failed receipts carry an error, and that no adapter stamps its own
+    output as `simulated`.
+  - `approval` settings block in `config/settings.yaml` (`require_for_irreversible`,
+    `require_for_compensable`, `require_signed`, `ttl_seconds`).
+  - 43 new tests. Coverage is now 90% of `orrery/` (1380 statements, 156 tests).
+
+### Fixed
+
+- **The three simulated adapters reported success for actions they do not implement.** The
+  conformance kit caught this on its first run: `OpenClawAdapter`, `HermesAdapter`, and
+  `WindowsOSAdapter` returned `success=True` for *any* `action_name`, including nonsense. A
+  simulation that fabricates success for unimplemented work is indistinguishable from a broken
+  integration, and is exactly what Law 7 forbids. All three now publish an action vocabulary and
+  return a failed receipt for anything outside it.
+
+### Changed
+
+- **Governance headline: 5 of the 10 Laws without runtime control → 3.** Laws 1 and 2 moved from
+  `NOT_ENFORCED` to `PARTIAL`, and Law 4 to `ENFORCED`. Read this narrowly. Orrery still has no
+  harm model and cannot judge whether an action is *good*; what it can now do is refuse to perform
+  an action it cannot undo unless a human authorized that exact action. That bounds the class of
+  what happens without consent, not the content of what is consented to.
+
+### Security
+
+- **An unsigned `ApprovalToken` is an assertion, not a proof.** Without `ORRERY_APPROVAL_KEY` set
+  and `approval.require_signed` enabled, any code running in the same process can mint a token.
+  Unsigned approval is a record for the audit trail, not a security control. Even with signing on,
+  a shared symmetric key proves custody, not authorship.
+
+### Added
+
 - **Gate 2 — governance stops being a document.**
   - `GOVERNANCE.md` maps all 10 Laws to policy IDs, runtime predicates, mechanisms, and tests.
     It is checked against `orrery/core/governance.py` by `tests/test_governance.py` in CI, so the
     document cannot claim an enforcement the code does not implement, and a policy marked
-    `ENFORCED` without a test fails the build. It states plainly that **5 of the 10 Laws have
-    no runtime control**.
+    `ENFORCED` without a test fails the build. It states plainly how many of the 10 Laws have
+    no runtime control.
   - `orrery/core/ledger.py` — an append-only, hash-linked `EventLedger` (Law 9). Phase
     transitions, action outcomes, critiques, rollbacks, adapter registrations, and delegation
     decisions are recorded as JSONL. It lives outside the rewindable `StateContext` and exposes

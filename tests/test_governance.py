@@ -23,7 +23,22 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 GOVERNANCE_DOC = REPO_ROOT / "GOVERNANCE.md"
 
 # Policy IDs the runtime emits into the ledger or refuses with.
-_SOURCE_POLICY_IDS = {"LAW7-SIM", "LAW9-LEDGER", "LAW9-APPEND", "DEL-000", "DEL-001", "DEL-002", "DEL-003", "DEL-004", "DEL-005"}
+_SOURCE_POLICY_IDS = {
+    "LAW7-SIM",
+    "LAW9-LEDGER",
+    "LAW9-APPEND",
+    "DEL-000",
+    "DEL-001",
+    "DEL-002",
+    "DEL-003",
+    "DEL-004",
+    "DEL-005",
+    "RISK-000",
+    "RISK-001",
+    "RISK-002",
+    "RISK-003",
+    "RISK-004",
+}
 
 
 def test_policy_ids_are_unique():
@@ -65,7 +80,7 @@ def test_governance_document_matches_the_registry():
     assert GOVERNANCE_DOC.exists(), "GOVERNANCE.md is the published form of the registry"
     text = GOVERNANCE_DOC.read_text(encoding="utf-8")
 
-    documented = set(re.findall(r"\b((?:LAW\d+|DEL)-[A-Z0-9]+)\b", text))
+    documented = set(re.findall(r"\b((?:LAW\d+|DEL|RISK)-[A-Z0-9]+)\b", text))
     registered = set(POLICY_INDEX)
 
     assert registered - documented == set(), f"undocumented policies: {registered - documented}"

@@ -4,6 +4,8 @@ and the governance controls (delegation authorization, checkpoint integrity, eve
 """
 
 from orrery.core.types import (
+    ActionRisk,
+    ApprovalToken,
     CyclePhase,
     CycleTier,
     CycleStatus,
@@ -13,6 +15,7 @@ from orrery.core.types import (
     ActionPayload,
     ExecutionReceipt,
 )
+from orrery.core.approval import ApprovalDecision, ApprovalGate, grant
 from orrery.core.config import Settings, get_settings, load_settings, reload_settings
 from orrery.core.state import CheckpointManager
 from orrery.core.critique import SelfCritiqueEngine
@@ -22,6 +25,11 @@ from orrery.core.integrity import IntegrityError
 from orrery.core.ledger import EventLedger, LedgerEvent
 
 __all__ = [
+    "ActionRisk",
+    "ApprovalToken",
+    "ApprovalDecision",
+    "ApprovalGate",
+    "grant",
     "CyclePhase",
     "CycleTier",
     "CycleStatus",

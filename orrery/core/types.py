@@ -48,12 +48,40 @@ class CycleStatus(str, Enum):
     FAILED = "FAILED"
 
 
+class ActionRisk(str, Enum):
+    """
+    How much of the world an action can break, and whether the framework can put it back.
+    """
+
+    READ_ONLY = "READ_ONLY"        # Observes. Changes nothing.
+    REVERSIBLE = "REVERSIBLE"      # The framework can undo it without outside help.
+    COMPENSABLE = "COMPENSABLE"    # Not undoable, but a compensating action exists.
+    IRREVERSIBLE = "IRREVERSIBLE"  # Cannot be undone or compensated. Needs a human.
+
+
+class ApprovalToken(BaseModel):
+    """
+    A human's explicit consent to one specific action. Bound to a single action_id so it
+    cannot be replayed against a different action.
+    """
+
+    action_id: str
+    approver: str
+    reason: str = ""
+    granted_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    signature: Optional[str] = None
+
+
 class ActionPayload(BaseModel):
     action_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     action_name: str
     params: Dict[str, Any] = Field(default_factory=dict)
     tier: CycleTier = CycleTier.MICRO
     target_adapter: str = "default"
+
+    # Default to the cautious end: an unclassified action is assumed to change something.
+    risk: ActionRisk = ActionRisk.REVERSIBLE
+    approval: Optional[ApprovalToken] = None
 
 
 class ExecutionReceipt(BaseModel):

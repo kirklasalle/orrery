@@ -40,11 +40,60 @@ POLICIES: Tuple[Policy, ...] = (
         "adapter and the operator, not the cycle engine.",
     ),
     Policy(
+        policy_id="RISK-CLASS",
+        law=1,
+        status=EnforcementStatus.PARTIAL,
+        predicate="An action's blast radius is classified before it runs, and the planner cannot "
+        "understate it.",
+        mechanism="Adapters declare an ActionRisk per action name. The dispatcher takes the stricter "
+        "of the planner's declaration and the adapter's, so a plan cannot relabel a delete as "
+        "harmless. Undeclared actions are treated as irreversible. This bounds the class of an "
+        "action, not its content: a permitted write can still be harmful.",
+        test="tests/test_filesystem_adapter.py::test_a_planner_cannot_downgrade_an_irreversible_action",
+    ),
+    Policy(
+        policy_id="RISK-001",
+        law=1,
+        status=EnforcementStatus.PARTIAL,
+        predicate="Nothing the framework cannot undo executes without explicit human authorization.",
+        mechanism="ApprovalGate refuses IRREVERSIBLE actions carrying no ApprovalToken, and "
+        "COMPENSABLE ones when configured. Refusals are ledgered. Covers only what adapters "
+        "correctly classify as irreversible.",
+        test="tests/test_filesystem_adapter.py::test_irreversible_action_is_refused_without_approval",
+    ),
+    Policy(
+        policy_id="RISK-002",
+        law=1,
+        status=EnforcementStatus.ENFORCED,
+        predicate="Consent granted for one action cannot authorize another.",
+        mechanism="ApprovalToken is bound to a single action_id; the gate refuses any mismatch.",
+        test="tests/test_filesystem_adapter.py::test_approval_cannot_be_replayed_against_another_action",
+    ),
+    Policy(
         policy_id="LAW2-OBEY",
         law=2,
         status=EnforcementStatus.NOT_ENFORCED,
         predicate="Orders from humans are obeyed unless they conflict with Law 1.",
         mechanism="None. There is no order-conflict evaluator; the goal string is executed as given.",
+    ),
+    Policy(
+        policy_id="RISK-003",
+        law=2,
+        status=EnforcementStatus.PARTIAL,
+        predicate="An authorization can be shown to have come from a human, not from the agent.",
+        mechanism="HMAC-SHA256 token signing when ORRERY_APPROVAL_KEY is set and "
+        "approval.require_signed is on. Off by default: without it, any code in the process can "
+        "mint a token, so an unsigned token documents intent rather than proving consent.",
+        test="tests/test_filesystem_adapter.py::test_signed_approval_passes_and_a_forged_one_does_not",
+    ),
+    Policy(
+        policy_id="RISK-004",
+        law=2,
+        status=EnforcementStatus.ENFORCED,
+        predicate="Authorization goes stale; it does not stand indefinitely.",
+        mechanism="ApprovalGate refuses tokens older than approval.ttl_seconds, and treats an "
+        "unparseable grant time as expired.",
+        test="tests/test_filesystem_adapter.py::test_expired_approval_is_refused",
     ),
     Policy(
         policy_id="LAW3-SELF",
@@ -62,6 +111,17 @@ POLICIES: Tuple[Policy, ...] = (
         "registered, yields a failed receipt; no subordinate system can report success on the "
         "cycle's behalf without executing.",
         test="tests/test_dispatcher.py::test_adapter_exception_becomes_failed_receipt",
+    ),
+    Policy(
+        policy_id="LAW4-CONFORM",
+        law=4,
+        status=EnforcementStatus.ENFORCED,
+        predicate="Subordinate systems are tested against the reporting contract, not trusted to "
+        "honour it.",
+        mechanism="The Adapter Conformance Kit (ADP-001..ADP-012) is run in CI against every "
+        "bundled adapter: receipts must echo the request, unsupported actions must fail rather "
+        "than raise or falsely succeed, and no adapter may stamp its own output as simulated.",
+        test="tests/test_adapter_conformance.py::test_bundled_adapters_conform",
     ),
     Policy(
         policy_id="LAW5-JUDICIAL",
@@ -104,6 +164,16 @@ POLICIES: Tuple[Policy, ...] = (
         mechanism="Adapters declare is_simulation; registration is logged and ledgered, and their "
         "receipts are tagged simulated=True.",
         test="tests/test_ledger.py::test_ledger_records_simulation_adapters",
+    ),
+    Policy(
+        policy_id="LAW7-REAL",
+        law=7,
+        status=EnforcementStatus.ENFORCED,
+        predicate="At least one adapter's success claims are checked against the world, not "
+        "against the framework's own bookkeeping.",
+        mechanism="FileSystemAdapter performs real I/O inside a sandbox root, and its tests assert "
+        "against the filesystem after the fact. The three legacy adapters remain simulations.",
+        test="tests/test_filesystem_adapter.py::test_write_then_read_touches_the_real_filesystem",
     ),
     Policy(
         policy_id="LAW8-EQUITY",
@@ -156,6 +226,15 @@ POLICIES: Tuple[Policy, ...] = (
         mechanism="backtrack() takes max() on step_count and carries lessons and attempt_log across "
         "the rollback.",
         test="tests/test_dispatcher.py::test_step_count_never_regresses_across_backtracking",
+    ),
+    Policy(
+        policy_id="RISK-000",
+        law=9,
+        status=EnforcementStatus.ENFORCED,
+        predicate="Every refused action is recorded with the policy that refused it.",
+        mechanism="execute_action appends an action.refused event carrying the deciding policy_id, "
+        "the action's risk class, and the target adapter, before returning the failed receipt.",
+        test="tests/test_filesystem_adapter.py::test_refused_action_is_recorded_in_the_ledger",
     ),
     Policy(
         policy_id="DEL-001",
@@ -239,8 +318,8 @@ def unenforced() -> Tuple[Policy, ...]:
 
 def coverage_by_law() -> Dict[int, EnforcementStatus]:
     """
-    The strongest status any policy achieves for each Law. Six of the ten Laws have no
-    runtime control at all; that is the honest headline, not a rounding error.
+    The strongest status any policy achieves for each Law. Several Laws have no runtime
+    control at all; that is the honest headline, not a rounding error.
     """
     order = {
         EnforcementStatus.NOT_ENFORCED: 0,

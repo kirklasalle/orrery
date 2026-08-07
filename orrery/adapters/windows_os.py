@@ -2,9 +2,9 @@
 Windows OS Desktop Automation Agent Adapter.
 """
 
-from typing import Any, ClassVar, Dict, Optional
+from typing import Any, ClassVar, Dict, Mapping, Optional
 import asyncio
-from orrery.core.types import ActionPayload, ExecutionReceipt, StateContext
+from orrery.core.types import ActionPayload, ActionRisk, ExecutionReceipt, StateContext
 from orrery.adapters.base import BaseAdapter
 
 
@@ -17,6 +17,14 @@ class WindowsOSAdapter(BaseAdapter):
     """
 
     is_simulation: ClassVar[bool] = True
+
+    declared_risks: ClassVar[Mapping[str, ActionRisk]] = {
+        "capture_screen": ActionRisk.READ_ONLY,
+        "read_ui_tree": ActionRisk.READ_ONLY,
+        "click_element": ActionRisk.COMPENSABLE,
+        "type_text": ActionRisk.COMPENSABLE,
+        "launch_process": ActionRisk.COMPENSABLE,
+    }
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(name="windows_os", config=config)
@@ -33,6 +41,17 @@ class WindowsOSAdapter(BaseAdapter):
         }
 
     async def execute_action(self, action: ActionPayload) -> ExecutionReceipt:
+        if action.action_name not in self.declared_risks:
+            return ExecutionReceipt(
+                action_id=action.action_id,
+                action_name=action.action_name,
+                success=False,
+                error=(
+                    f"WindowsOSAdapter does not implement action {action.action_name!r}. "
+                    f"Supported: {sorted(self.declared_risks)}."
+                ),
+            )
+
         target = action.params.get("target", "desktop_ui")
         
         # Simulate OS interaction delay if specified

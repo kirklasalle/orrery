@@ -6,8 +6,10 @@ import asyncio
 import logging
 from typing import Callable, Dict, Mapping, Optional, Awaitable, Any, TYPE_CHECKING
 from orrery.core.config import Settings, get_settings
+from orrery.core.approval import ApprovalGate
 from orrery.core.types import (
     AttemptRecord,
+    ActionRisk,
     CyclePhase,
     CycleStatus,
     StateContext,
@@ -27,6 +29,13 @@ logger = logging.getLogger(__name__)
 # Type for async phase handlers
 PhaseHandler = Callable[[StateContext], Awaitable[StateContext]]
 
+_RISK_SEVERITY = {
+    ActionRisk.READ_ONLY: 0,
+    ActionRisk.REVERSIBLE: 1,
+    ActionRisk.COMPENSABLE: 2,
+    ActionRisk.IRREVERSIBLE: 3,
+}
+
 
 class CycleDispatcher:
     """
@@ -40,6 +49,7 @@ class CycleDispatcher:
         critique_engine: Optional[SelfCritiqueEngine] = None,
         settings: Optional[Settings] = None,
         ledger: Optional[EventLedger] = None,
+        approval_gate: Optional[ApprovalGate] = None,
     ):
         self.settings = settings or get_settings()
         self.checkpoint_manager = checkpoint_manager or CheckpointManager(
@@ -55,6 +65,12 @@ class CycleDispatcher:
         self.ledger = ledger or EventLedger(
             storage_dir=self.settings.ledger.storage_dir,
             persist=self.settings.ledger.persist,
+        )
+        self.approval_gate = approval_gate or ApprovalGate(
+            require_approval_for_irreversible=self.settings.approval.require_for_irreversible,
+            require_approval_for_compensable=self.settings.approval.require_for_compensable,
+            require_signed_approval=self.settings.approval.require_signed,
+            approval_ttl_seconds=self.settings.approval.ttl_seconds,
         )
         self._adapters: Dict[str, "BaseAdapter"] = {}
         self._phase_handlers: Dict[CyclePhase, PhaseHandler] = {}
@@ -106,6 +122,7 @@ class CycleDispatcher:
         other.checkpoint_manager = self.checkpoint_manager
         other.critique_engine = self.critique_engine
         other.ledger = self.ledger
+        other.approval_gate = self.approval_gate
         for key, adapter in self._adapters.items():
             other._adapters.setdefault(key, adapter)
 
@@ -244,6 +261,8 @@ class CycleDispatcher:
                 action_id=action.action_id,
                 action_name=action.action_name,
                 adapter=action.target_adapter,
+                risk=action.risk.value,
+                approved_by=action.approval.approver if action.approval else None,
                 success=receipt.success,
             )
         return context
@@ -265,6 +284,26 @@ class CycleDispatcher:
                 ),
             )
 
+        action.risk = self.effective_risk(action, adapter)
+        decision = self.approval_gate.evaluate(action)
+        if not decision.allowed:
+            logger.error("Action %r refused by %s: %s", action.action_name, decision.policy_id, decision.reason)
+            self.ledger.append(
+                "action.refused",
+                summary=f"{action.action_name} refused: {decision.reason}",
+                policy_id=decision.policy_id,
+                action_id=action.action_id,
+                action_name=action.action_name,
+                adapter=action.target_adapter,
+                risk=action.risk.value,
+            )
+            return ExecutionReceipt(
+                action_id=action.action_id,
+                action_name=action.action_name,
+                success=False,
+                error=f"Refused by policy {decision.policy_id}: {decision.reason}",
+            )
+
         try:
             receipt = await adapter.execute_action(action)
         except Exception as exc:
@@ -279,6 +318,17 @@ class CycleDispatcher:
         if getattr(adapter, "is_simulation", False):
             receipt.output = {"simulated": True, "adapter": adapter.name, "result": receipt.output}
         return receipt
+
+    @staticmethod
+    def effective_risk(action: ActionPayload, adapter: "BaseAdapter") -> ActionRisk:
+        """
+        The stricter of what the planner declared and what the adapter declares, so a planner
+        cannot downgrade a delete into something harmless.
+        """
+        declared = getattr(adapter, "declared_risks", {}).get(action.action_name)
+        if declared is None:
+            return action.risk
+        return max(action.risk, declared, key=lambda risk: _RISK_SEVERITY[risk])
 
     def _record_attempt(self, context: StateContext, critique: CritiqueResult) -> None:
         """

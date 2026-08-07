@@ -2,8 +2,8 @@
 Prism Refraction & OpenClaw Platform Adapter.
 """
 
-from typing import Any, ClassVar, Dict, Optional
-from orrery.core.types import ActionPayload, ExecutionReceipt, StateContext
+from typing import Any, ClassVar, Dict, Mapping, Optional
+from orrery.core.types import ActionPayload, ActionRisk, ExecutionReceipt, StateContext
 from orrery.adapters.base import BaseAdapter
 
 
@@ -16,6 +16,12 @@ class OpenClawAdapter(BaseAdapter):
     """
 
     is_simulation: ClassVar[bool] = True
+
+    declared_risks: ClassVar[Mapping[str, ActionRisk]] = {
+        "route_task": ActionRisk.REVERSIBLE,
+        "query_routing_table": ActionRisk.READ_ONLY,
+        "cancel_task": ActionRisk.REVERSIBLE,
+    }
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(name="openclaw", config=config)
@@ -32,6 +38,19 @@ class OpenClawAdapter(BaseAdapter):
         }
 
     async def execute_action(self, action: ActionPayload) -> ExecutionReceipt:
+        # An adapter that reports success for actions it does not implement is lying, and a
+        # simulation that lies is indistinguishable from a broken integration.
+        if action.action_name not in self.declared_risks:
+            return ExecutionReceipt(
+                action_id=action.action_id,
+                action_name=action.action_name,
+                success=False,
+                error=(
+                    f"OpenClawAdapter does not implement action {action.action_name!r}. "
+                    f"Supported: {sorted(self.declared_risks)}."
+                ),
+            )
+
         headers = self._build_protocol_headers(action)
         output_msg = f"[OpenClaw/{self.routing_core}] Dispatched action '{action.action_name}' successfully."
         

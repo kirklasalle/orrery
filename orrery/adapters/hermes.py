@@ -2,8 +2,8 @@
 Hermes / Console Backend Reasoning Harness Adapter.
 """
 
-from typing import Any, ClassVar, Dict, Optional
-from orrery.core.types import ActionPayload, ExecutionReceipt, StateContext, CritiqueResult
+from typing import Any, ClassVar, Dict, Mapping, Optional
+from orrery.core.types import ActionPayload, ActionRisk, ExecutionReceipt, StateContext, CritiqueResult
 from orrery.adapters.base import BaseAdapter
 
 
@@ -16,6 +16,12 @@ class HermesAdapter(BaseAdapter):
     """
 
     is_simulation: ClassVar[bool] = True
+
+    declared_risks: ClassVar[Mapping[str, ActionRisk]] = {
+        "reason": ActionRisk.READ_ONLY,
+        "evaluate_gate": ActionRisk.READ_ONLY,
+        "format_prompt": ActionRisk.READ_ONLY,
+    }
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(name="hermes", config=config)
@@ -32,6 +38,17 @@ class HermesAdapter(BaseAdapter):
         }
 
     async def execute_action(self, action: ActionPayload) -> ExecutionReceipt:
+        if action.action_name not in self.declared_risks:
+            return ExecutionReceipt(
+                action_id=action.action_id,
+                action_name=action.action_name,
+                success=False,
+                error=(
+                    f"HermesAdapter does not implement action {action.action_name!r}. "
+                    f"Supported: {sorted(self.declared_risks)}."
+                ),
+            )
+
         formatted_prompt = self._build_reasoning_prompt(action)
         output_msg = f"[Hermes/Console ({self.mode})] Processed reasoning payload for '{action.action_name}'."
         

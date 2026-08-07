@@ -59,6 +59,13 @@ class LedgerSettings(BaseModel):
     storage_dir: str = ".ledger"
 
 
+class ApprovalSettings(BaseModel):
+    require_for_irreversible: bool = True
+    require_for_compensable: bool = False
+    require_signed: bool = False
+    ttl_seconds: float = 900.0
+
+
 class BacktrackingSettings(BaseModel):
     max_retries_per_step: int = 3
 
@@ -70,6 +77,7 @@ class Settings(BaseModel):
     integrity: IntegritySettings = Field(default_factory=IntegritySettings)
     delegation: DelegationSettings = Field(default_factory=DelegationSettings)
     ledger: LedgerSettings = Field(default_factory=LedgerSettings)
+    approval: ApprovalSettings = Field(default_factory=ApprovalSettings)
     backtracking: BacktrackingSettings = Field(default_factory=BacktrackingSettings)
     tier_timeouts: Dict[CycleTier, float] = Field(default_factory=lambda: dict(_DEFAULT_TIER_TIMEOUTS))
     allow_simulated_adapters: bool = True
@@ -114,6 +122,7 @@ def load_settings(path: Optional[Path] = None) -> Settings:
         integrity=IntegritySettings(**(meta_skills.get("integrity") or {})),
         delegation=DelegationSettings(**(raw.get("delegation") or {})),
         ledger=LedgerSettings(**(raw.get("ledger") or {})),
+        approval=ApprovalSettings(**(raw.get("approval") or {})),
         backtracking=BacktrackingSettings(**(meta_skills.get("backtracking") or {})),
         tier_timeouts=tier_timeouts,
         allow_simulated_adapters=bool((raw.get("adapters") or {}).get("allow_simulated", True)),

@@ -1,54 +1,60 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main]
 
 permissions:
-  contents: read
+    contents: read
 
 jobs:
-  test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ["3.10", "3.11", "3.12"]
+    test:
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, windows-latest]
+                python-version: ["3.10", "3.11", "3.12"]
 
-    steps:
-      - uses: actions/checkout@v4
+        steps:
+            - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
+            - uses: actions/setup-python@v5
+              with:
+                  python-version: ${{ matrix.python-version }}
 
-      - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+            - name: Install
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -e ".[dev]"
 
-      - name: Test
-        run: pytest tests/ -q --cov=orrery --cov-report=term-missing
+            - name: Test
+              run: pytest tests/ -q --cov=orrery --cov-report=term-missing
 
-  governance:
-    name: Governance conformance
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    governance:
+        name: Governance conformance
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
+            - uses: actions/setup-python@v5
+              with:
+                  python-version: "3.10"
 
-      - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+            - name: Install
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -e ".[dev]"
 
-      # Fails if GOVERNANCE.md claims an enforcement the code does not implement,
-      # or if an ENFORCED policy has no test behind it.
-      - name: Verify governance claims match the code
-        run: pytest tests/test_governance.py -q
+            # Fails if GOVERNANCE.md claims an enforcement the code does not implement,
+            # or if an ENFORCED policy has no test behind it.
+            - name: Verify governance claims match the code
+              run: pytest tests/test_governance.py -q
+
+            # Fails if any bundled adapter breaks the reporting contract: fabricating success
+            # for work it did not do, raising instead of returning a failed receipt, or
+            # misdeclaring an action's risk.
+            - name: Verify adapters conform to the reporting contract
+              run: pytest tests/test_adapter_conformance.py -q
