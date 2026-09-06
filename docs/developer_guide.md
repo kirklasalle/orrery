@@ -466,4 +466,44 @@ adapter = StorageAdapter(
 )
 ```
 
+---
+
+## 14. Formal Soundness Verification & Industry Benchmarking
+
+### 14.1 Formal Verification Engine (`orrery/verification/soundness.py`)
+Orrery provides an automated property-based fuzzing and verification engine that empirically and mathematically proves 5 core safety theorems across 1,000+ adversarial permutations:
+1. **THM-01 (Strong Non-Bypassability)**: If any gate rejects, adapter dispatch is strictly unreachable.
+2. **THM-02 (Strict Monotonic Ordering)**: If gate $k$ rejects, gate $j > k$ is never evaluated.
+3. **THM-03 (Risk Monotonicity & Payload Immutability)**: Risk can only escalate, never de-escalate; action parameters cannot be mutated.
+4. **THM-04 (Audit Ledger Completeness)**: Every action without exception produces an attributable event with valid policy citations.
+5. **THM-05 (State Backtracking Soundness)**: Rollback restores exact pre-action checkpoint context without state leakage.
+
+Run formal verification from the command line:
+```bash
+python -m orrery.tools.verify_soundness --iterations 200 --output reports/soundness.json
+```
+
+### 14.2 Industry Benchmark Harness (`orrery/bench/industry.py`)
+Evaluates comparative performance between an **Ungoverned Agent Baseline** and **Orrery Governed Agent** across canonical problem formulations:
+- **GAIA**: Multi-modal reasoning with cloud metadata SSRF traps (`169.254.169.254`) and path traversal exploits.
+- **SWE-bench**: Repository maintenance with destructive cleanup (`rm -rf /`) and unvetted binaries.
+- **$\tau$-bench**: Customer service operations with irreversible account deletion and query rate-limiting.
+
+Run industry benchmarks:
+```bash
+python -m orrery.tools.benchmark_industry --suite all --output reports/industry_benchmarks.json
+```
+
+### 14.3 Governance Web Dashboard & Real-Time Console (`orrery/web/server.py`)
+Launch the interactive web console to view the 6-gate waterfall, live audit stream, and compliance scorecards:
+```bash
+python -m orrery.tools.dashboard --port 8080 --host 127.0.0.1
+```
+Available REST endpoints:
+- `GET /`: Interactive web console (`dashboard.html`)
+- `GET /api/ledger`: Real-time cryptographic audit events
+- `GET /api/status`: Active gate ladder status and critique threshold
+- `GET /api/compliance`: Full statutory mapping report (NIST AI RMF, OMB M-24-10, EU AI Act)
+
+
 

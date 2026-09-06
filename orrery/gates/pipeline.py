@@ -241,7 +241,8 @@ class GovernancePipeline:
                 self.ledger.append(
                     "action.refused",
                     summary=f"{action.action_name} refused by {verdict.gate_name}: {verdict.reason}",
-                    policy_id=verdict.policy_id,
+                    policy_id=verdict.policy_id or "LAW-REFUSED",
+                    action_id=action.action_id,
                     action_name=action.action_name,
                     adapter=adapter.name,
                 )
@@ -268,6 +269,8 @@ class GovernancePipeline:
             self.ledger.append(
                 "action.executed" if receipt.success else "action.failed",
                 summary=f"{action.action_name} on {adapter.name}: {'success' if receipt.success else receipt.error}",
+                policy_id="LAW9-LEDGER",
+                action_id=action.action_id,
                 action_name=action.action_name,
                 adapter=adapter.name,
                 success=receipt.success,
