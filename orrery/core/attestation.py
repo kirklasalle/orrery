@@ -75,6 +75,7 @@ def governed_configuration(settings: "Settings") -> Dict[str, Any]:
         "quarantine": settings.quarantine.model_dump(mode="json"),
         "envelope": settings.envelope.model_dump(mode="json"),
         "invariants": settings.invariants.model_dump(mode="json"),
+        "ratelimit": settings.ratelimit.model_dump(mode="json"),
         "allow_simulated_adapters": settings.allow_simulated_adapters,
         "charter": charter_digest(),
         "policies": [

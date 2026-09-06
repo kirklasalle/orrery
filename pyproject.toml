@@ -34,11 +34,17 @@ Changelog = "https://github.com/kirklasalle/orrery/blob/main/CHANGELOG.md"
 signing = [
     "cryptography>=42.0",
 ]
+telemetry = [
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
     "cryptography>=42.0",
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -48,3 +54,16 @@ include = ["orrery*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "asyncio: mark test as async test",
+]
+
+[tool.coverage.run]
+source = ["orrery"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+]

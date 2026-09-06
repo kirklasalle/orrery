@@ -393,6 +393,15 @@ POLICIES: Tuple[Policy, ...] = (
         test="tests/test_dispatcher.py::test_run_full_cycle_honours_step_budget",
     ),
     Policy(
+        policy_id="LAW10-RATELIMIT",
+        law=10,
+        status=EnforcementStatus.ENFORCED,
+        predicate="Burst operations are capped before execution to prevent resource exhaustion.",
+        mechanism="RateLimitGate checks sliding-window action frequency per adapter/action before "
+        "dispatch; requests exceeding the configured ceiling are refused.",
+        test="tests/test_ratelimit.py::test_burst_actions_exceeding_rate_limit_are_refused",
+    ),
+    Policy(
         policy_id="LAW10-CHARTER",
         law=10,
         status=EnforcementStatus.ENFORCED,

@@ -50,3 +50,22 @@ class BaseAdapter(ABC):
         Dispatches an action payload to the target platform engine and returns an execution receipt.
         """
         pass
+
+    def _receipt(
+        self,
+        action: ActionPayload,
+        success: bool,
+        output: Optional[Any] = None,
+        error: Optional[str] = None,
+    ) -> ExecutionReceipt:
+        """
+        Builds a receipt for an adapter action. Shared by all concrete adapters so receipt
+        construction is uniform across the framework.
+        """
+        return ExecutionReceipt(
+            action_id=action.action_id,
+            action_name=action.action_name,
+            success=success,
+            output=output,
+            error=error,
+        )

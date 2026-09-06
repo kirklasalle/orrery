@@ -230,6 +230,9 @@ class OperatorKeyring:
         return True
 
 
+Keyring = OperatorKeyring
+
+
 def signer_from_env() -> Optional[OperatorSigner]:
     """
     The configured operator signer, or None. Returns None rather than raising when nothing

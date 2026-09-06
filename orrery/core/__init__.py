@@ -23,6 +23,8 @@ from orrery.core.dispatcher import CycleDispatcher
 from orrery.core.delegation import DelegationBudget, DelegationDecision, DelegationPolicy
 from orrery.core.integrity import IntegrityError
 from orrery.core.ledger import EventLedger, LedgerEvent
+from orrery.core.calibration import CalibrationObjective, CalibrationSample, CritiqueCalibrator
+from orrery.core.judge import LLMGoalJudge, create_openrouter_goal_check
 
 __all__ = [
     "ActionRisk",
@@ -51,4 +53,9 @@ __all__ = [
     "IntegrityError",
     "EventLedger",
     "LedgerEvent",
+    "CalibrationObjective",
+    "CalibrationSample",
+    "CritiqueCalibrator",
+    "LLMGoalJudge",
+    "create_openrouter_goal_check",
 ]

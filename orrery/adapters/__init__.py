@@ -10,6 +10,7 @@ scanning this package for integrations.
 from orrery.adapters.base import BaseAdapter
 from orrery.adapters.conformance import ConformanceReport, run_conformance
 from orrery.adapters.filesystem import FileSystemAdapter
+from orrery.adapters.openrouter import OpenRouterAdapter
 from orrery.adapters.process import ProcessAdapter
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "ConformanceReport",
     "run_conformance",
     "FileSystemAdapter",
+    "OpenRouterAdapter",
     "ProcessAdapter",
 ]

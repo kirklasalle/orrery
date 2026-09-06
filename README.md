@@ -138,6 +138,8 @@ orrery/
 | [GOVERNANCE.md](GOVERNANCE.md) | Every Law, what enforces it, and the test that proves it. Says plainly that **2 of the 10 have no runtime control**. CI fails if it claims more than the code does. |
 | [SECURITY.md](SECURITY.md) | The threat model, and what is deliberately **out of scope**: the security boundary is the process, not the gate ladder. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | The property nobody guesses — four documents are CI gates, so a PR that changes behaviour updates the governance claim in the same commit. |
+| [docs/developer_guide.md](docs/developer_guide.md) | Comprehensive engineering guide: architecture, custom adapters, custom gates, cycle implementations, Ed25519 signing, state checkpointing, and testing standards. |
+| [docs/user_guide.md](docs/user_guide.md) | Operator guide: installation, cycle tiers, 5-gate defense-in-depth stack, environment config, practical tutorials, and troubleshooting. |
 | [docs/audit_2026-08-06.md](docs/audit_2026-08-06.md) | The full audit, with findings marked resolved or still open. Nothing is quietly closed. |
 | [docs/competitive_landscape_2026.md](docs/competitive_landscape_2026.md) | Sourced analysis, including where LangGraph, Reflexion, and CoALA already occupy this space. |
 

@@ -40,7 +40,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Mapping, NamedTuple, Optional, Sequence
+from typing import Any, ClassVar, Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple
 
 from orrery.adapters.base import BaseAdapter
 from orrery.core.envelope import EffectEnvelope
@@ -189,20 +189,8 @@ class ProcessAdapter(BaseAdapter):
             )
         return self._receipt(action, success=True, output=output)
 
-    def _receipt(
-        self,
-        action: ActionPayload,
-        success: bool,
-        output: Optional[Any] = None,
-        error: Optional[str] = None,
-    ) -> ExecutionReceipt:
-        return ExecutionReceipt(
-            action_id=action.action_id,
-            action_name=action.action_name,
-            success=success,
-            output=output,
-            error=error,
-        )
+
+
 
     def _do_list_allowed(self, params: Dict[str, Any]) -> Dict[str, Any]:
         return {"allowed_programs": sorted(self.allowed_programs)}
@@ -224,40 +212,78 @@ class ProcessAdapter(BaseAdapter):
         workdir = self._resolve_workdir(params.get("cwd"))
         timeout = float(params.get("timeout_seconds") or self.timeout_seconds)
 
-        completed = subprocess.run(  # noqa: S603 - shell=False with an allowlisted executable
+        proc = subprocess.Popen(  # noqa: S603 - shell=False with an allowlisted executable
             [executable, *args],
             cwd=str(workdir),
             env=self._environment(params.get("env")),
-            capture_output=True,
-            timeout=timeout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             shell=False,
-            check=False,
         )
 
-        stdout, stdout_truncated = self._clip(completed.stdout)
-        stderr, stderr_truncated = self._clip(completed.stderr)
+        timed_out = False
+        try:
+            raw_stdout, raw_stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            self._kill_tree(proc.pid)
+            raw_stdout, raw_stderr = proc.communicate(timeout=5)
+
+        stdout, stdout_truncated = self._clip(raw_stdout)
+        stderr, stderr_truncated = self._clip(raw_stderr)
 
         output = {
             "program": params.get("program"),
             "executable": executable,
             "args": args,
             "cwd": str(workdir.relative_to(self.root)) if workdir != self.root else ".",
-            "exit_code": completed.returncode,
+            "exit_code": proc.returncode,
             "stdout": stdout,
             "stderr": stderr,
             "truncated": stdout_truncated or stderr_truncated,
+            "timed_out": timed_out,
         }
 
-        if completed.returncode != 0:
+        if timed_out:
+            return ActionOutcome(
+                output,
+                f"{params.get('program')!r} killed after {timeout}s timeout (process tree terminated)",
+            )
+
+        if proc.returncode != 0:
             # The adapter ran; the work did not succeed. Reporting this as a success would
             # let a failing build count towards a passing reflection score.
             detail = stderr.strip() or stdout.strip() or "no output"
             return ActionOutcome(
                 output,
-                f"{params.get('program')!r} exited {completed.returncode}: {detail[:500]}",
+                f"{params.get('program')!r} exited {proc.returncode}: {detail[:500]}",
             )
         return ActionOutcome(output)
 
-    def _clip(self, raw: bytes) -> tuple[str, bool]:
+    @staticmethod
+    def _kill_tree(pid: int) -> None:
+        """
+        Kills a process and all its children. On Windows uses taskkill /T; on POSIX
+        sends SIGTERM to the process group, falling back to SIGKILL after a grace period.
+        """
+        import signal
+        import sys
+
+        try:
+            if sys.platform == "win32":
+                # /T = tree kill, /F = force
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    capture_output=True,
+                    timeout=10,
+                    check=False,
+                )
+            else:
+                # Send SIGTERM to the entire process group.
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+        except (ProcessLookupError, OSError) as exc:
+            logger.debug("Process tree kill for PID %d: %s (may already be dead)", pid, exc)
+
+    def _clip(self, raw: bytes) -> Tuple[str, bool]:
         truncated = len(raw) > self.max_output_bytes
         return raw[: self.max_output_bytes].decode("utf-8", errors="replace"), truncated

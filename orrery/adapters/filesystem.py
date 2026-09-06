@@ -107,20 +107,8 @@ class FileSystemAdapter(BaseAdapter):
 
         return self._receipt(action, success=True, output=output)
 
-    def _receipt(
-        self,
-        action: ActionPayload,
-        success: bool,
-        output: Optional[Any] = None,
-        error: Optional[str] = None,
-    ) -> ExecutionReceipt:
-        return ExecutionReceipt(
-            action_id=action.action_id,
-            action_name=action.action_name,
-            success=success,
-            output=output,
-            error=error,
-        )
+
+
 
     # Action handlers. Each runs on a worker thread and returns JSON-serializable output.
 

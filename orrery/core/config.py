@@ -2,11 +2,11 @@
 Runtime settings loaded from config/settings.yaml.
 """
 
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import logging
 import os
+import threading
 
 import yaml
 from pydantic import BaseModel, Field
@@ -107,6 +107,19 @@ class BacktrackingSettings(BaseModel):
     max_retries_per_step: int = 3
 
 
+class RateLimitRuleConfig(BaseModel):
+    name: str
+    adapter: Optional[str] = None
+    action: Optional[str] = None
+    max_calls: int = 60
+    window_seconds: float = 60.0
+
+
+class RateLimitSettings(BaseModel):
+    enabled: bool = False
+    rules: List[RateLimitRuleConfig] = Field(default_factory=list)
+
+
 class Settings(BaseModel):
     dispatcher: DispatcherSettings = Field(default_factory=DispatcherSettings)
     critique: CritiqueSettings = Field(default_factory=CritiqueSettings)
@@ -121,6 +134,7 @@ class Settings(BaseModel):
     envelope: EnvelopeSettings = Field(default_factory=EnvelopeSettings)
     invariants: InvariantSettings = Field(default_factory=InvariantSettings)
     backtracking: BacktrackingSettings = Field(default_factory=BacktrackingSettings)
+    ratelimit: RateLimitSettings = Field(default_factory=RateLimitSettings)
     tier_timeouts: Dict[CycleTier, float] = Field(default_factory=lambda: dict(_DEFAULT_TIER_TIMEOUTS))
     # A fresh install should not accept fabricated receipts without being asked.
     allow_simulated_adapters: bool = False
@@ -177,11 +191,25 @@ def load_settings(path: Optional[Path] = None) -> Settings:
     )
 
 
-@lru_cache(maxsize=1)
+# Thread-safe singleton. Replaces the prior @lru_cache approach, which is not safe under
+# concurrent asyncio.to_thread workers in Python < 3.12.
+_settings_lock = threading.Lock()
+_settings_instance: Optional[Settings] = None
+
+
 def get_settings() -> Settings:
-    return load_settings()
+    global _settings_instance
+    if _settings_instance is not None:
+        return _settings_instance
+    with _settings_lock:
+        # Double-check inside the lock to avoid redundant loads.
+        if _settings_instance is None:
+            _settings_instance = load_settings()
+        return _settings_instance
 
 
 def reload_settings() -> Settings:
-    get_settings.cache_clear()
-    return get_settings()
+    global _settings_instance
+    with _settings_lock:
+        _settings_instance = load_settings()
+        return _settings_instance

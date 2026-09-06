@@ -1,11 +1,19 @@
-"""
-Shared test doubles.
-"""
-
+import asyncio
+import inspect
 from typing import Any, ClassVar, Dict, List, Mapping
 
 from orrery.adapters.base import BaseAdapter
 from orrery.core.types import ActionPayload, ActionRisk, ExecutionReceipt, StateContext
+
+def pytest_pyfunc_call(pyfuncitem):
+    """Universal async test runner fallback for any pytest environment."""
+    testfunction = pyfuncitem.obj
+    if inspect.iscoroutinefunction(testfunction):
+        argnames = pyfuncitem._fixtureinfo.argnames
+        kwargs = {arg: pyfuncitem.funcargs[arg] for arg in argnames if arg in pyfuncitem.funcargs}
+        asyncio.run(testfunction(**kwargs))
+        return True
+
 
 # The action names the default handlers and the four tiers actually plan. A test double that
 # declares its vocabulary models a conformant adapter; one that declares nothing models a

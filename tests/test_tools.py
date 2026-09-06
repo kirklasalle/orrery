@@ -121,6 +121,7 @@ def test_attest_show_lists_exactly_what_is_covered(operator_env, capsys):
         "quarantine",
         "envelope",
         "invariants",
+        "ratelimit",
         "allow_simulated_adapters",
         "charter",
         "policies",

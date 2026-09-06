@@ -9,6 +9,8 @@ from typing import Callable, Dict, Mapping, Optional, Awaitable, Any, TYPE_CHECK
 from orrery.core.config import Settings, get_settings
 from orrery.core import attestation
 from orrery.core.approval import ApprovalGate
+from orrery.core.ratelimit import RateLimitGate, RateLimitRule, RATELIMIT_POLICY
+from orrery.core.telemetry import trace_span
 from orrery.core.envelope import EffectEnvelope, EnvelopeGate
 from orrery.core.invariants import Invariant, InvariantMonitor
 from orrery.core.interdiction import (
@@ -65,6 +67,7 @@ class CycleDispatcher:
         quarantine_gate: Optional[QuarantineGate] = None,
         envelope_gate: Optional[EnvelopeGate] = None,
         invariant_monitor: Optional[InvariantMonitor] = None,
+        rate_limit_gate: Optional[RateLimitGate] = None,
     ):
         self.settings = settings or get_settings()
         # A configuration check that runs after the dispatcher is usable is not a check.
@@ -117,6 +120,13 @@ class CycleDispatcher:
         self.invariant_monitor = invariant_monitor or InvariantMonitor(
             invariants=[Invariant(**rule) for rule in self.settings.invariants.rules],
             on_breach=self.settings.invariants.on_breach,
+        )
+        self.rate_limit_gate = rate_limit_gate or RateLimitGate(
+            rules=[
+                RateLimitRule(**rule.model_dump())
+                for rule in self.settings.ratelimit.rules
+            ],
+            enabled=self.settings.ratelimit.enabled,
         )
         self._adapters: Dict[str, "BaseAdapter"] = {}
         self._phase_handlers: Dict[CyclePhase, PhaseHandler] = {}
@@ -173,6 +183,7 @@ class CycleDispatcher:
         other.quarantine_gate = self.quarantine_gate
         other.envelope_gate = self.envelope_gate
         other.invariant_monitor = self.invariant_monitor
+        other.rate_limit_gate = self.rate_limit_gate
         for key, adapter in self._adapters.items():
             other._adapters.setdefault(key, adapter)
 
@@ -223,8 +234,17 @@ class CycleDispatcher:
         ):
             self.checkpoint_manager.create_checkpoint(context)
 
-        # Execute phase handler
-        updated_context = await handler(context)
+        # Execute phase handler with telemetry span
+        with trace_span(
+            f"orrery.phase.{current_phase.value.lower()}",
+            attributes={
+                "orrery.cycle_id": context.cycle_id,
+                "orrery.tier": context.tier.value,
+                "orrery.phase": current_phase.value,
+                "orrery.step": context.step_count,
+            },
+        ):
+            updated_context = await handler(context)
 
         # Determine next transition phase
         if current_phase == CyclePhase.PERCEPTION:
@@ -310,20 +330,28 @@ class CycleDispatcher:
                 context = await self.step(context)
             return context
 
-        if timeout_seconds is None:
-            return await _drive()
+        with trace_span(
+            f"orrery.cycle.{context.tier.value.lower()}",
+            attributes={
+                "orrery.cycle_id": context.cycle_id,
+                "orrery.tier": context.tier.value,
+                "orrery.goal": context.goal,
+            },
+        ):
+            if timeout_seconds is None:
+                return await _drive()
 
-        try:
-            return await asyncio.wait_for(_drive(), timeout=timeout_seconds)
-        except asyncio.TimeoutError:
-            logger.error(
-                "[Cycle %s] Wall-clock budget of %.1fs exhausted; marking cycle FAILED.",
-                context.cycle_id,
-                timeout_seconds,
-            )
-            context.lessons.append(f"Cycle halted: exceeded {timeout_seconds:.1f}s time budget.")
-            context.status = CycleStatus.FAILED
-            return context
+            try:
+                return await asyncio.wait_for(_drive(), timeout=timeout_seconds)
+            except asyncio.TimeoutError:
+                logger.error(
+                    "[Cycle %s] Wall-clock budget of %.1fs exhausted; marking cycle FAILED.",
+                    context.cycle_id,
+                    timeout_seconds,
+                )
+                context.lessons.append(f"Cycle halted: exceeded {timeout_seconds:.1f}s time budget.")
+                context.status = CycleStatus.FAILED
+                return context
 
     async def dispatch_actions(self, context: StateContext) -> StateContext:
         """
@@ -388,83 +416,103 @@ class CycleDispatcher:
         """
         Routes a single action to its target adapter and returns the resulting receipt.
         """
-        adapter = self._adapters.get(action.target_adapter)
-        if adapter is None:
-            # Nothing ran, so nothing succeeded. Report that rather than inventing a result.
-            return ExecutionReceipt(
-                action_id=action.action_id,
-                action_name=action.action_name,
-                success=False,
-                error=(
-                    f"No adapter registered for target {action.target_adapter!r}; "
-                    f"action {action.action_name!r} was not executed."
-                ),
+        with trace_span(
+            f"orrery.action.{action.action_name}",
+            attributes={
+                "orrery.action_id": action.action_id,
+                "orrery.action_name": action.action_name,
+                "orrery.target_adapter": action.target_adapter,
+                "orrery.risk": action.risk.value,
+            },
+        ):
+            adapter = self._adapters.get(action.target_adapter)
+            if adapter is None:
+                # Nothing ran, so nothing succeeded. Report that rather than inventing a result.
+                return ExecutionReceipt(
+                    action_id=action.action_id,
+                    action_name=action.action_name,
+                    success=False,
+                    error=(
+                        f"No adapter registered for target {action.target_adapter!r}; "
+                        f"action {action.action_name!r} was not executed."
+                    ),
+                )
+
+            # The gate ladder: forbidden, then unknown, then needing consent. Each answers a
+            # different question, and a later one must never be able to answer an earlier one's.
+            interdiction = self.interdiction_gate.evaluate(action, getattr(adapter, "root", None))
+            if not interdiction.allowed:
+                return self._refuse(action, interdiction.policy_id, interdiction.reason)
+
+            # A breach is a known violation, not an unknown, so it is refused rather than held.
+            reach = self.envelope_gate.evaluate(action, adapter)
+            if not reach.allowed:
+                return self._refuse(action, reach.policy_id, reach.reason)
+
+            held = self.quarantine_gate.evaluate(action, adapter)
+            if not held.allowed:
+                if held.record is not None:
+                    self.quarantine_gate.record(held.record)
+                self.ledger.append(
+                    "action.quarantined",
+                    summary=f"{action.action_name} held: {held.reason}",
+                    policy_id=held.policy_id,
+                    action_id=action.action_id,
+                    action_name=action.action_name,
+                    adapter=action.target_adapter,
+                )
+                return self._refuse(action, held.policy_id, held.reason, ledger=False)
+
+            # Rate-limiting gate: check frequency ceilings before approval or execution
+            rate_decision = self.rate_limit_gate.evaluate(action)
+            if not rate_decision.allowed:
+                logger.error(
+                    "Action %r refused by %s: %s",
+                    action.action_name,
+                    rate_decision.policy_id,
+                    rate_decision.reason,
+                )
+                return self._refuse(action, rate_decision.policy_id, rate_decision.reason)
+
+            # A classification describes; it never authorises. The classified risk feeds the
+            # approval gate exactly as an adapter's own declaration would.
+            action.risk = self.effective_risk(
+                action, adapter, held.classification.risk if held.classification else None
             )
 
-        # The gate ladder: forbidden, then unknown, then needing consent. Each answers a
-        # different question, and a later one must never be able to answer an earlier one's.
-        interdiction = self.interdiction_gate.evaluate(action, getattr(adapter, "root", None))
-        if not interdiction.allowed:
-            return self._refuse(action, interdiction.policy_id, interdiction.reason)
+            decision = self.approval_gate.evaluate(action)
+            if not decision.allowed:
+                logger.error("Action %r refused by %s: %s", action.action_name, decision.policy_id, decision.reason)
+                self.ledger.append(
+                    "action.refused",
+                    summary=f"{action.action_name} refused: {decision.reason}",
+                    policy_id=decision.policy_id,
+                    action_id=action.action_id,
+                    action_name=action.action_name,
+                    adapter=action.target_adapter,
+                    risk=action.risk.value,
+                )
+                return ExecutionReceipt(
+                    action_id=action.action_id,
+                    action_name=action.action_name,
+                    success=False,
+                    error=f"Refused by policy {decision.policy_id}: {decision.reason}",
+                )
 
-        # A breach is a known violation, not an unknown, so it is refused rather than held.
-        reach = self.envelope_gate.evaluate(action, adapter)
-        if not reach.allowed:
-            return self._refuse(action, reach.policy_id, reach.reason)
+            try:
+                receipt = await adapter.execute_action(action)
+            except Exception as exc:
+                logger.exception("Adapter %r raised while executing %r.", adapter.name, action.action_name)
+                return ExecutionReceipt(
+                    action_id=action.action_id,
+                    action_name=action.action_name,
+                    success=False,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
 
-        held = self.quarantine_gate.evaluate(action, adapter)
-        if not held.allowed:
-            if held.record is not None:
-                self.quarantine_gate.record(held.record)
-            self.ledger.append(
-                "action.quarantined",
-                summary=f"{action.action_name} held: {held.reason}",
-                policy_id=held.policy_id,
-                action_id=action.action_id,
-                action_name=action.action_name,
-                adapter=action.target_adapter,
-            )
-            return self._refuse(action, held.policy_id, held.reason, ledger=False)
-
-        # A classification describes; it never authorises. The classified risk feeds the
-        # approval gate exactly as an adapter's own declaration would.
-        action.risk = self.effective_risk(
-            action, adapter, held.classification.risk if held.classification else None
-        )
-
-        decision = self.approval_gate.evaluate(action)
-        if not decision.allowed:
-            logger.error("Action %r refused by %s: %s", action.action_name, decision.policy_id, decision.reason)
-            self.ledger.append(
-                "action.refused",
-                summary=f"{action.action_name} refused: {decision.reason}",
-                policy_id=decision.policy_id,
-                action_id=action.action_id,
-                action_name=action.action_name,
-                adapter=action.target_adapter,
-                risk=action.risk.value,
-            )
-            return ExecutionReceipt(
-                action_id=action.action_id,
-                action_name=action.action_name,
-                success=False,
-                error=f"Refused by policy {decision.policy_id}: {decision.reason}",
-            )
-
-        try:
-            receipt = await adapter.execute_action(action)
-        except Exception as exc:
-            logger.exception("Adapter %r raised while executing %r.", adapter.name, action.action_name)
-            return ExecutionReceipt(
-                action_id=action.action_id,
-                action_name=action.action_name,
-                success=False,
-                error=f"{type(exc).__name__}: {exc}",
-            )
-
-        if getattr(adapter, "is_simulation", False):
-            receipt.output = {"simulated": True, "adapter": adapter.name, "result": receipt.output}
-        return receipt
+            if getattr(adapter, "is_simulation", False):
+                receipt.output = {"simulated": True, "adapter": adapter.name, "result": receipt.output}
+            return receipt
 
     def _refuse(
         self,
