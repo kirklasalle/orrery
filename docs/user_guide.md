@@ -313,3 +313,25 @@ export OPENROUTER_API_KEY="sk-or-v1-..."
 
 When no API key is supplied, the OpenRouter adapter automatically runs in **simulation / air-gapped mode**, providing deterministic test responses without failing.
 
+---
+
+## 12. Working with Real-World Production Adapters
+
+Orrery includes adapters for governed interaction with external services:
+
+### 12.1 HTTP/REST Adapter
+Governs outbound web requests, automatically enforcing domain allowlists and blocking cloud metadata SSRF attempts:
+- **Actions**: `get`, `head`, `post`, `put`, `patch`, `delete`.
+- **Approval Mandate**: `delete` actions are classified as `IRREVERSIBLE` and trigger approval gate scrutiny.
+
+### 12.2 Relational Database Adapter
+Executes SQL queries against relational databases with statement-level risk classification:
+- **Actions**: `query` (SELECT), `execute` (INSERT/UPDATE), `execute_destructive` (DELETE/DROP), `list_tables`, `table_info`.
+- **Read-Only Mode**: Set `read_only=True` to guarantee no write or drop operations execute.
+
+### 12.3 Cloud & Object Storage Adapter
+Interacts with S3/GCS-compatible object storage with multi-tenant prefix boundaries:
+- **Actions**: `get_object`, `list_objects`, `stat_object`, `put_object`, `copy_object`, `delete_object`, `delete_bucket`.
+- **Security Boundaries**: Path traversal (`..`) in object keys is automatically blocked by the envelope gate.
+
+

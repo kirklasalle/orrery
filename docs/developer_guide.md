@@ -416,3 +416,54 @@ python -m orrery.tools.compliance --framework all --format markdown --output aud
 python -m orrery.tools.compliance --framework nist --format json --strict
 ```
 
+---
+
+## 13. Production Integration Adapters
+
+Orrery ships with a suite of real-world adapters enforcing granular risk boundaries and envelope confinement:
+
+### 13.1 HTTP/REST Adapter (`orrery/adapters/http.py`)
+- **Risk Tiers**: `get`/`head` (READ_ONLY), `post`/`put`/`patch` (COMPENSABLE), `delete` (IRREVERSIBLE).
+- **SSRF Hardening**: Automatically blocks cloud metadata endpoints (`169.254.169.254`, `metadata.google.internal`).
+- **Domain Allowlisting**: Confines requests to explicitly approved API hosts.
+
+```python
+from orrery.adapters.http import HttpAdapter
+
+adapter = HttpAdapter(
+    allowed_domains=["api.github.com", "api.slack.com"],
+    max_response_bytes=10 * 1024 * 1024,
+)
+```
+
+### 13.2 Database Adapter (`orrery/adapters/database.py`)
+- **Risk Tiers**: `SELECT` (READ_ONLY), `INSERT`/`UPDATE` (COMPENSABLE), `DELETE`/`DROP` (IRREVERSIBLE).
+- **Sandbox Confinement**: Database paths must reside inside configured directory sandboxes.
+- **Safety**: Built-in `read_only` mode option and automatic transaction rollback on failure.
+
+```python
+from orrery.adapters.database import DatabaseAdapter
+
+adapter = DatabaseAdapter(
+    database_path="/sandbox/app.db",
+    sandbox_dir="/sandbox",
+    max_rows=500,
+)
+```
+
+### 13.3 Object/Cloud Storage Adapter (`orrery/adapters/storage.py`)
+- **Risk Tiers**: `get`/`list`/`stat` (READ_ONLY), `put`/`copy` (COMPENSABLE), `delete` (IRREVERSIBLE).
+- **Multi-Tenant Confinement**: Configurable `allowed_buckets` and `allowed_prefixes`.
+- **Traversal Defense**: Rejects keys containing path traversal (`..` or absolute paths).
+
+```python
+from orrery.adapters.storage import StorageAdapter
+
+adapter = StorageAdapter(
+    storage_root="/data/blobstore",
+    allowed_buckets=["prod-assets", "staging-data"],
+    allowed_prefixes=["tenant-101/"],
+)
+```
+
+

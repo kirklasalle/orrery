@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Governed HTTP/REST API Adapter (`orrery/adapters/http.py`)**:
+  - Outbound HTTP/REST communication with fine-grained risk classifications (`get`/`head` = READ_ONLY, `post`/`put`/`patch` = COMPENSABLE, `delete` = IRREVERSIBLE).
+  - Built-in SSRF protection blocking cloud metadata endpoints (`169.254.169.254`, `metadata.google.internal`), domain allowlists, response truncation limits, and SHA-256 payload digests.
+- **Governed Relational Database Adapter (`orrery/adapters/database.py`)**:
+  - SQL execution engine with automatic statement-level risk classification (`SELECT` = READ_ONLY, `INSERT`/`UPDATE` = COMPENSABLE, `DELETE`/`DROP`/`TRUNCATE` = IRREVERSIBLE).
+  - Path-confined SQLite database files, optional strict `read_only` mode, max row limits, automatic transaction rollback on error, and table schema discovery.
+- **Governed Object/Cloud Storage Adapter (`orrery/adapters/storage.py`)**:
+  - S3/GCS bucket-object operations (`get`/`list`/`stat` = READ_ONLY, `put`/`copy` = COMPENSABLE, `delete` = IRREVERSIBLE).
+  - Multi-tenant bucket allowlisting, tenant prefix confinement, path traversal rejection, local filesystem backing store, and verifiable ETag receipts.
 - **U.S. Compliance & Regulatory Audit Module (`orrery/compliance/`, `python -m orrery.tools.compliance`)**:
   - Full regulatory mapping and automated auditor for **NIST AI RMF 1.0 (NIST AI 100-1)** Core Functions (GOVERN, MAP, MEASURE, MANAGE), White House **OMB M-24-10** federal requirements, **Colorado SB 24-205** (Artificial Intelligence Act), **California AB 2013** / safety directives, and **EU AI Act Articles 12-15** international benchmark.
   - Automated inspection of settings, keyrings, charter manifest, and event ledgers with structured JSON export and human-readable Markdown briefings with actionable remediation plans.
@@ -29,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Developer's Guide (`docs/developer_guide.md`)**: Comprehensive engineering documentation detailing architecture, custom adapter authoring, governance gate development, hierarchical cycle mechanics, Ed25519 cryptographic signing, state checkpointing/backtracking, and testing conventions.
 - **User's Guide (`docs/user_guide.md`)**: Complete operator and administrator reference covering quickstart, cycle tiers, 5-gate defense-in-depth pipeline, configuration, practical execution tutorials (process & filesystem), audit ledger verification, backtracking mechanics, and troubleshooting.
 - **Expanded Test Coverage Suite**:
+  - `tests/test_http_adapter.py`: HTTP/REST API adapter tests, domain allowlisting, SSRF defenses, and mock/simulated requests.
+  - `tests/test_database_adapter.py`: SQL database adapter tests, statement classification, CRUD, read-only mode, and transaction rollbacks.
+  - `tests/test_storage_adapter.py`: Object storage adapter tests, bucket allowlists, prefix confinement, traversal rejection, and CRUD operations.
   - `tests/test_compliance.py`: NIST, OMB, Colorado, California, and EU AI Act compliance evaluation, gap detection, JSON/Markdown export, and CLI tests.
   - `tests/test_calibration.py`: Empirical threshold sweep, confusion matrix, ROC calculation, and calibration CLI tests.
   - `tests/test_openrouter_and_judge.py`: OpenRouter adapter inference, model allowlists, token quotas, and LLM-as-judge goal verification tests.
@@ -40,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `tests/test_mcp.py`: Complete MCP JSON-RPC protocol and tool execution tests.
   - `tests/test_a2a.py`: Agent-to-Agent protocol, signature verification, and delegation hierarchy tests.
   - `tests/test_gates_sdk.py`: Standalone `GovernancePipeline` and `GateVerdict` SDK tests.
-  - Total test count expanded from 351 to 462 tests (461 passed, 1 skipped, 0 failed), achieving 93% overall repository coverage.
+  - Total test count expanded from 351 to 484 tests (483 passed, 1 skipped, 0 failed), achieving 93% overall repository coverage.
 
 ### Fixed
 
