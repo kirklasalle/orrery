@@ -21,17 +21,33 @@ import re
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, ClassVar, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from orrery.adapters.base import BaseAdapter
 from orrery.core.types import ActionPayload, ActionRisk, ExecutionReceipt, StateContext
 
 logger = logging.getLogger(__name__)
 
-# SQL command classification patterns
-_READ_COMMANDS = {"select", "explain", "pragma", "show", "describe"}
+# SQL command classification patterns (PRAGMA excluded: can mutate schema/settings)
+_READ_COMMANDS = {"select", "explain", "show", "describe"}
 _COMPENSABLE_COMMANDS = {"insert", "update", "create", "replace"}
 _DESTRUCTIVE_COMMANDS = {"delete", "drop", "truncate", "alter"}
+
+
+def _strip_sql_comments_and_literals(sql: str) -> str:
+    """Strips comments and quoted string literals for safe statement boundary inspection."""
+    cleaned = re.sub(r"--.*$", "", sql, flags=re.MULTILINE)
+    cleaned = re.sub(r"/\*.*?\*/", "", cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r"'(?:''|[^'])*'", "''", cleaned)
+    cleaned = re.sub(r'"(?:""|[^"])*"', '""', cleaned)
+    return cleaned.strip()
+
+
+def _has_multiple_statements(sql: str) -> bool:
+    """Returns True if SQL contains more than one semicolon-separated statement."""
+    stripped = _strip_sql_comments_and_literals(sql)
+    parts = [part.strip() for part in stripped.split(";") if part.strip()]
+    return len(parts) > 1
 
 
 def classify_sql_statement(sql: str) -> ActionRisk:
@@ -87,11 +103,18 @@ class DatabaseAdapter(BaseAdapter):
             self.database_path = ":memory:"
         else:
             p = Path(database_path).resolve()
-            if self.sandbox_dir and not str(p).startswith(str(self.sandbox_dir)):
+            if self.sandbox_dir is not None and p != self.sandbox_dir and not p.is_relative_to(self.sandbox_dir):
                 raise ValueError(
                     f"database path '{p}' escapes configured sandbox directory '{self.sandbox_dir}'"
                 )
             self.database_path = str(p)
+
+    def sandbox_roots(self) -> Tuple[Path, ...]:
+        if self.sandbox_dir is not None:
+            return (self.sandbox_dir,)
+        if self.database_path != ":memory:":
+            return (Path(self.database_path).resolve().parent,)
+        return ()
 
     def classify_risk(self, action: ActionPayload) -> ActionRisk:
         action_name = action.action_name
@@ -165,11 +188,13 @@ class DatabaseAdapter(BaseAdapter):
                 statement_risk = classify_sql_statement(sql)
 
                 # Read-only enforcement check
-                if self.read_only and statement_risk != ActionRisk.READ_ONLY:
+                if (self.read_only or action_name == "query") and (
+                    statement_risk != ActionRisk.READ_ONLY or _has_multiple_statements(sql)
+                ):
                     return self._receipt(
                         action=action,
                         success=False,
-                        error="mutating SQL statements are forbidden when database adapter is in read_only mode",
+                        error="mutating, multi-statement, or non-read-only SQL is forbidden in query/read_only mode",
                     )
 
                 # Query execution
@@ -185,15 +210,17 @@ class DatabaseAdapter(BaseAdapter):
 
         return self._receipt(action=action, success=False, error="unhandled operation")
 
-    def _get_connection(self) -> sqlite3.Connection:
+    def _get_connection(self, read_only: bool = False) -> sqlite3.Connection:
         if self.database_path == ":memory:":
             # Memory databases need persistent connection if state is preserved
             if not hasattr(self, "_mem_conn") or self._mem_conn is None:
                 self._mem_conn = sqlite3.connect(":memory:")
             return self._mem_conn
 
-        conn = sqlite3.connect(self.database_path)
-        return conn
+        if read_only:
+            uri = f"{Path(self.database_path).resolve().as_uri()}?mode=ro"
+            return sqlite3.connect(uri, uri=True)
+        return sqlite3.connect(self.database_path)
 
     def _get_tables(self) -> List[str]:
         conn = self._get_connection()
@@ -225,10 +252,13 @@ class DatabaseAdapter(BaseAdapter):
         args: Union[Sequence[Any], Dict[str, Any]],
         is_query: bool,
     ) -> ExecutionReceipt:
-        conn = self._get_connection()
+        enforce_ro = self.read_only or is_query
+        conn = self._get_connection(read_only=enforce_ro)
         cursor = conn.cursor()
         start = time.time()
         try:
+            if enforce_ro:
+                cursor.execute("PRAGMA query_only = ON;")
             cursor.execute(sql, args)
             latency = round(time.time() - start, 4)
 
@@ -270,5 +300,10 @@ class DatabaseAdapter(BaseAdapter):
                 error=f"SQL error: {exc}",
             )
         finally:
+            if enforce_ro and self.database_path == ":memory:":
+                try:
+                    conn.execute("PRAGMA query_only = OFF;")
+                except sqlite3.Error:
+                    pass
             if self.database_path != ":memory:":
                 conn.close()

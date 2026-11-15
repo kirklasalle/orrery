@@ -141,3 +141,53 @@ def test_delegation_decisions_reach_the_ledger(tmp_path):
         assert all(e.policy_id == "DEL-000" for e in decisions)
 
     asyncio.run(run())
+
+
+def test_ledger_hydrates_existing_chain_across_restarts(tmp_path):
+    ledger_dir = str(tmp_path / "ledger")
+    first = EventLedger(storage_dir=ledger_dir)
+    e0 = first.append("first", summary="first event")
+    e1 = first.append("second", summary="second event")
+
+    second = EventLedger(storage_dir=ledger_dir)
+    e2 = second.append("third", summary="third event")
+    e3 = second.append("fourth", summary="fourth event")
+
+    assert [e.sequence for e in second.events] == [0, 1, 2, 3]
+    assert e2.prev_hash == e1.content_hash
+    assert e3.prev_hash == e2.content_hash
+    assert second.verify().verified is True
+
+    reloaded = EventLedger.read(second.path)
+    assert len(reloaded) == 4
+    assert reloaded[0].content_hash == e0.content_hash
+    assert reloaded[2].prev_hash == reloaded[1].content_hash
+
+
+def test_ledger_fails_closed_on_corrupted_existing_file(tmp_path):
+    ledger_dir = tmp_path / "ledger"
+    first = EventLedger(storage_dir=str(ledger_dir))
+    first.append("a", summary="one")
+    first.append("b", summary="two")
+
+    # Corrupt prev_hash of line 2 on disk
+    lines = (ledger_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    corrupted = lines[0] + "\n" + lines[1].replace('"sequence":1', '"sequence":99') + "\n"
+    (ledger_dir / "events.jsonl").write_text(corrupted, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="corrupt|integrity|verify"):
+        EventLedger(storage_dir=str(ledger_dir))
+
+
+def test_two_live_ledgers_interleaved_writes_stay_chained(tmp_path):
+    ledger_dir = str(tmp_path / "ledger")
+    l1 = EventLedger(storage_dir=ledger_dir)
+    l2 = EventLedger(storage_dir=ledger_dir)
+
+    l1.append("a", summary="from l1")
+    l2.append("b", summary="from l2")
+    l1.append("c", summary="from l1 again")
+
+    reloaded = EventLedger(storage_dir=ledger_dir)
+    assert [e.sequence for e in reloaded.events] == [0, 1, 2]
+    assert reloaded.verify().verified is True

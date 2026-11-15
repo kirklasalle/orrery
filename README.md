@@ -117,7 +117,7 @@ orrery/
 │   │                             #   approval, interdiction, envelope, quarantine, invariants,
 │   │                             #   signing, attestation, charter, hindsight
 │   ├── cycles/                   # Hierarchical Tiers (MetaCycle, MacroCycle, MesoCycle, MicroCycle)
-│   ├── adapters/                 # Real adapters only: FileSystem, Process
+│   ├── adapters/                 # Bundled adapters: FileSystem, Process, Database, Storage, HTTP, OpenRouter
 │   ├── bench/                    # Backtracking benchmark: tasks graded against the disk
 │   └── tools/                    # Operator CLIs: keygen, attest, charter, quarantine, propose
 ├── tests/                        # Pytest Suite, incl. adversarial and hardened-profile gates

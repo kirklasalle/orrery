@@ -186,6 +186,7 @@ def load_settings(path: Optional[Path] = None) -> Settings:
         envelope=EnvelopeSettings(**(raw.get("envelope") or {})),
         invariants=InvariantSettings(**(raw.get("invariants") or {})),
         backtracking=BacktrackingSettings(**(meta_skills.get("backtracking") or {})),
+        ratelimit=RateLimitSettings(**(raw.get("ratelimit") or {})),
         tier_timeouts=tier_timeouts,
         allow_simulated_adapters=bool((raw.get("adapters") or {}).get("allow_simulated", False)),
     )

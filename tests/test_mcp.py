@@ -12,7 +12,7 @@ import json
 import pytest
 
 from orrery.adapters.filesystem import FileSystemAdapter
-from orrery.core.config import Settings
+from orrery.core.config import LedgerSettings, Settings
 from orrery.core.dispatcher import CycleDispatcher
 from orrery.mcp.server import MCPGovernanceServer, MCP_PROTOCOL_VERSION
 
@@ -23,7 +23,10 @@ def governed_server(tmp_path):
     fs_adapter = FileSystemAdapter(root=str(sandbox_dir))
 
     dispatcher = CycleDispatcher(
-        settings=Settings(allow_simulated_adapters=True),
+        settings=Settings(
+            allow_simulated_adapters=True,
+            ledger=LedgerSettings(storage_dir=str(tmp_path / "ledger")),
+        ),
     )
     dispatcher.register_adapter(fs_adapter)
     return MCPGovernanceServer(dispatcher=dispatcher)
@@ -156,3 +159,61 @@ async def test_mcp_invalid_json_handling(governed_server):
     unknown_method = {"jsonrpc": "2.0", "id": 9, "method": "unknown_method"}
     unknown_res = await governed_server.handle_message(unknown_method)
     assert unknown_res["error"]["code"] == -32601
+
+
+@pytest.mark.asyncio
+async def test_mcp_audit_verify_detects_tampered_ledger(governed_server):
+    governed_server.dispatcher.ledger.append("custom.event", summary="original")
+    governed_server.dispatcher.ledger._events[0].summary = "tampered"
+
+    req = {
+        "jsonrpc": "2.0",
+        "id": 10,
+        "method": "tools/call",
+        "params": {"name": "orrery_audit_verify", "arguments": {}},
+    }
+    res = await governed_server.handle_message(req)
+    assert res["result"]["isError"] is True
+    payload = json.loads(res["result"]["content"][0]["text"])
+    assert payload["ledger_valid"] is False
+    assert payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_execute_tool_respects_halt_and_records_ledger(tmp_path):
+    sandbox_dir = tmp_path / "sandbox"
+    sandbox_dir.mkdir()
+    (sandbox_dir / "note.txt").write_text("ok", encoding="utf-8")
+    halt_file = tmp_path / ".halt"
+
+    from orrery.core.config import InterdictionSettings
+
+    dispatcher = CycleDispatcher(
+        settings=Settings(
+            ledger=LedgerSettings(storage_dir=str(tmp_path / "ledger")),
+            interdiction=InterdictionSettings(halt_file=str(halt_file)),
+        )
+    )
+    dispatcher.register_adapter(FileSystemAdapter(root=str(sandbox_dir)))
+    server = MCPGovernanceServer(dispatcher=dispatcher)
+
+    # Normal call records action.executed in ledger
+    ok_res = await server.handle_message({
+        "jsonrpc": "2.0",
+        "id": 11,
+        "method": "tools/call",
+        "params": {"name": "orrery_read_file", "arguments": {"path": "note.txt"}},
+    })
+    assert ok_res["result"]["isError"] is False
+    assert any(e.event_type == "action.executed" for e in dispatcher.ledger.events)
+
+    # Active halt file must block subsequent MCP tool calls
+    halt_file.write_text("emergency stop", encoding="utf-8")
+    halted_res = await server.handle_message({
+        "jsonrpc": "2.0",
+        "id": 12,
+        "method": "tools/call",
+        "params": {"name": "orrery_read_file", "arguments": {"path": "note.txt"}},
+    })
+    assert halted_res["result"]["isError"] is True
+    assert "halt" in halted_res["result"]["content"][0]["text"].lower()

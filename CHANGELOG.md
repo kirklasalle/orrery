@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security & Fixes (Phase 1 Hardening)
+
+- **Database Adapter Read-Only & Sandbox Hardening (`orrery/adapters/database.py`)**:
+  - Enforced read-only SQL execution when `action_name == "query"` (`is_query=True`) or `read_only=True`: rejects multi-statement `;` payloads, DML/DDL, and mutating `PRAGMA`s (removed `"pragma"` from `_READ_COMMANDS`), opens file-backed SQLite DBs with `?mode=ro`, and applies `PRAGMA query_only = ON`.
+  - Replaced `str.startswith` sandbox check with `Path.resolve().is_relative_to(...)`, added `sandbox_roots()`, and added missing `Union` typing import.
+- **Object Storage Adapter Path Confinement (`orrery/adapters/storage.py`)**:
+  - Added canonical `_validate_bucket_and_key()` and `_resolve_paths()` helpers rejecting `.`, `..`, path separators, and anchored/absolute paths across `bucket`, `key`, and `copy_object` destinations (`dest_bucket`, `dest_key`), while enforcing `allowed_buckets` and `allowed_prefixes` on destinations.
+- **Event Ledger Chain Hydration & Locking (`orrery/core/ledger.py`)**:
+  - `EventLedger(persist=True)` now hydrates and verifies existing `.jsonl` chains on startup (failing closed on sequence or hash-chain corruption instead of resetting to `GENESIS_HASH`).
+  - Added cross-process advisory file locking (`msvcrt.locking` on Windows, `fcntl.flock` on POSIX) and atomic tail synchronization inside `append()` for concurrent/interleaved instances.
+- **Governance & MCP Gate Completeness (`orrery/adapters/base.py`, `orrery/core/config.py`, `orrery/core/dispatcher.py`, `orrery/mcp/server.py`)**:
+  - Added `BaseAdapter.sandbox_roots()` so `InterdictionGate` resolves relative paths consistently for `DatabaseAdapter` and `StorageAdapter`.
+  - Added mid-batch `interdiction_gate.halted()` checks between planned actions in `CycleDispatcher.dispatch_actions()`.
+  - Wired `ratelimit` settings in `load_settings()` (`orrery/core/config.py`).
+  - Fixed `orrery_audit_verify` in `MCPGovernanceServer` to call `self.dispatcher.ledger.verify()`, and routed `_execute_tool()` through `.halted()`, execution ledgering, and `invariant_monitor.evaluate()`.
+- **Charter Manifest Re-pinned (`config/charter_manifest.json`)**:
+  - Re-pinned `AGENTIC_PRIME_DIRECTIVE.md`, `AGENTIC_SACRED_COVENANT.md`, and `Permanent_Active_Directives.txt` via `python -m orrery.tools.charter --update`.
+
 ### Added
 
 - **Formal Verification of Gate Composition (`orrery/verification/soundness.py`, `python -m orrery.tools.verify_soundness`)**:

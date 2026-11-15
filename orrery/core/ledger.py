@@ -14,16 +14,24 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
+import threading
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from orrery.core.integrity import GENESIS_HASH, canonical_json, sign_digest, signature_matches
 import hashlib
 import hmac
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 logger = logging.getLogger(__name__)
 
@@ -69,10 +77,61 @@ class EventLedger:
         self._events: List[LedgerEvent] = []
         self._head: str = GENESIS_HASH
         self._path: Optional[Path] = None
+        self._lock_path: Optional[Path] = None
+        self._thread_lock = threading.Lock()
 
         if self.persist:
             self.storage_dir.mkdir(parents=True, exist_ok=True)
             self._path = self.storage_dir / filename
+            self._lock_path = self.storage_dir / f".{filename}.lock"
+            if self._path.exists() and self._path.stat().st_size > 0:
+                self._hydrate_existing()
+
+    @contextmanager
+    def _acquire_lock(self) -> Iterator[None]:
+        """Acquires an in-process thread lock and cross-process advisory file lock."""
+        with self._thread_lock:
+            if not self._lock_path:
+                yield
+                return
+            with open(self._lock_path, "a+b") as lock_handle:
+                lock_handle.seek(0, os.SEEK_END)
+                if lock_handle.tell() == 0:
+                    lock_handle.write(b"\0")
+                    lock_handle.flush()
+                lock_handle.seek(0)
+                if sys.platform == "win32":
+                    msvcrt.locking(lock_handle.fileno(), msvcrt.LK_LOCK, 1)
+                else:
+                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    lock_handle.seek(0)
+                    if sys.platform == "win32":
+                        msvcrt.locking(lock_handle.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+    def _hydrate_existing(self) -> None:
+        """Loads and verifies an existing persisted ledger chain, failing closed on corruption."""
+        assert self._path is not None
+        with self._acquire_lock():
+            try:
+                loaded = self.read(self._path)
+            except (OSError, json.JSONDecodeError, ValidationError) as exc:
+                raise ValueError(
+                    f"Refusing to append to corrupted event ledger at {self._path}: {exc}"
+                ) from exc
+
+            self._events = loaded
+            verification = self.verify()
+            if not verification.verified:
+                raise ValueError(
+                    f"Refusing to append to corrupted event ledger at {self._path}: {verification.summary}"
+                )
+            if self._events:
+                self._head = self._events[-1].content_hash or GENESIS_HASH
 
     @property
     def path(self) -> Optional[Path]:
@@ -91,23 +150,30 @@ class EventLedger:
         policy_id: Optional[str] = None,
         **data: Any,
     ) -> LedgerEvent:
-        event = LedgerEvent(
-            sequence=len(self._events),
-            event_type=event_type,
-            summary=summary,
-            cycle_id=cycle_id,
-            tier=tier,
-            policy_id=policy_id,
-            data=data,
-            prev_hash=self._head,
-        )
-        event.content_hash = event.digest()
-        event.signature = sign_digest(event.content_hash)
+        with self._acquire_lock():
+            if self._path is not None and self._path.exists() and self._path.stat().st_size > 0:
+                latest = self.read(self._path)
+                if len(latest) > len(self._events):
+                    self._events = latest
+                    self._head = self._events[-1].content_hash or GENESIS_HASH
 
-        self._events.append(event)
-        self._head = event.content_hash
-        self._write(event)
-        return event
+            event = LedgerEvent(
+                sequence=len(self._events),
+                event_type=event_type,
+                summary=summary,
+                cycle_id=cycle_id,
+                tier=tier,
+                policy_id=policy_id,
+                data=data,
+                prev_hash=self._head,
+            )
+            event.content_hash = event.digest()
+            event.signature = sign_digest(event.content_hash)
+
+            self._events.append(event)
+            self._head = event.content_hash
+            self._write_unlocked(event)
+            return event
 
     def events_for(self, cycle_id: str) -> List[LedgerEvent]:
         return [event for event in self._events if event.cycle_id == cycle_id]
@@ -116,7 +182,11 @@ class EventLedger:
         result = LedgerVerification(verified=True)
         expected_prev = GENESIS_HASH
 
-        for event in self._events:
+        for idx, event in enumerate(self._events):
+            if event.sequence != idx:
+                result.verified = False
+                result.failures.append(f"event {event.sequence} has unexpected sequence (expected {idx})")
+
             if event.prev_hash != expected_prev:
                 result.verified = False
                 result.failures.append(f"event {event.sequence} does not link to its predecessor")
@@ -137,13 +207,14 @@ class EventLedger:
 
         return result
 
-    def _write(self, event: LedgerEvent) -> None:
+    def _write_unlocked(self, event: LedgerEvent) -> None:
         if not self._path:
             return
         try:
             is_new = not self._path.exists()
             with open(self._path, "a", encoding="utf-8") as handle:
                 handle.write(event.model_dump_json() + "\n")
+                handle.flush()
             if is_new:
                 # The ledger records goals and action names; restrict to the owning user.
                 os.chmod(self._path, 0o600)

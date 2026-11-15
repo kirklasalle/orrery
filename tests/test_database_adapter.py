@@ -14,7 +14,8 @@ from orrery.core.types import ActionPayload, ActionRisk, CycleTier, StateContext
 def test_classify_sql_statement():
     assert classify_sql_statement("SELECT * FROM users") == ActionRisk.READ_ONLY
     assert classify_sql_statement("EXPLAIN SELECT 1") == ActionRisk.READ_ONLY
-    assert classify_sql_statement("PRAGMA table_info(users)") == ActionRisk.READ_ONLY
+    assert classify_sql_statement("PRAGMA table_info(users)") == ActionRisk.IRREVERSIBLE
+    assert classify_sql_statement("PRAGMA writable_schema=ON") == ActionRisk.IRREVERSIBLE
     assert classify_sql_statement("INSERT INTO users VALUES (1, 'alice')") == ActionRisk.COMPENSABLE
     assert classify_sql_statement("UPDATE users SET name='bob'") == ActionRisk.COMPENSABLE
     assert classify_sql_statement("DELETE FROM users WHERE id=1") == ActionRisk.IRREVERSIBLE
@@ -160,3 +161,54 @@ def test_database_adapter_edge_cases(tmp_path: Path):
     import asyncio
     env = asyncio.run(adapter.perceive_environment(context))
     assert "items" in env["existing_tables"]
+
+
+def test_database_query_rejects_mutating_and_multi_statement_sql(tmp_path: Path):
+    db_file = tmp_path / "sec01.db"
+    adapter = DatabaseAdapter(database_path=db_file, sandbox_dir=tmp_path)
+    assert adapter.execute(ActionPayload(
+        action_name="execute",
+        params={"sql": "CREATE TABLE users (id INT, name TEXT);"},
+        tier=CycleTier.MICRO,
+        target_adapter="database",
+    )).success
+    assert adapter.execute(ActionPayload(
+        action_name="execute",
+        params={"sql": "INSERT INTO users VALUES (1, 'alice');"},
+        tier=CycleTier.MICRO,
+        target_adapter="database",
+    )).success
+
+    # SEC-01: 'query' (READ_ONLY) must refuse mutating SQL, PRAGMA, and multi-statement payloads
+    for payload_sql in (
+        "DROP TABLE users;",
+        "INSERT INTO users VALUES (2, 'mallory');",
+        "PRAGMA writable_schema=ON;",
+        "SELECT * FROM users; DROP TABLE users;",
+    ):
+        res = adapter.execute(ActionPayload(
+            action_name="query",
+            params={"sql": payload_sql},
+            tier=CycleTier.MICRO,
+            target_adapter="database",
+        ))
+        assert not res.success, f"query should have rejected: {payload_sql}"
+
+    # Verify table and row remain intact
+    check = adapter.execute(ActionPayload(
+        action_name="query",
+        params={"sql": "SELECT id, name FROM users;"},
+        tier=CycleTier.MICRO,
+        target_adapter="database",
+    ))
+    assert check.success
+    assert check.output["rows"] == [[1, "alice"]] or check.output["rows"] == [(1, "alice")]
+
+
+def test_database_sandbox_rejects_sibling_prefix_escape(tmp_path: Path):
+    sandbox = tmp_path / "sandbox"
+    sandbox.mkdir()
+    sibling = tmp_path / "sandbox_evil" / "evil.db"
+    sibling.parent.mkdir()
+    with pytest.raises(ValueError, match="escapes configured sandbox"):
+        DatabaseAdapter(database_path=sibling, sandbox_dir=sandbox)

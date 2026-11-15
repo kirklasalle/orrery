@@ -23,7 +23,7 @@ import re
 import shutil
 import time
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Mapping, Optional, Sequence, Union
+from typing import Any, ClassVar, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from orrery.adapters.base import BaseAdapter
 from orrery.core.types import ActionPayload, ActionRisk, ExecutionReceipt, StateContext
@@ -91,6 +91,60 @@ class StorageAdapter(BaseAdapter):
     async def execute_action(self, action: ActionPayload) -> ExecutionReceipt:
         return self.execute(action)
 
+    def _validate_bucket_and_key(
+        self, bucket: str, key: str = "", require_key: bool = True
+    ) -> Optional[str]:
+        """Validates bucket/key syntax, allowlists, and traversal boundaries."""
+        if (
+            not bucket
+            or bucket in (".", "..")
+            or ".." in bucket
+            or "/" in bucket
+            or "\\" in bucket
+            or not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9.\-_]{0,62}$", bucket)
+        ):
+            return f"invalid bucket name '{bucket}'"
+
+        if self.allowed_buckets and bucket not in self.allowed_buckets:
+            return f"Envelope violation: bucket '{bucket}' is not permitted by allowed_buckets"
+
+        if require_key:
+            if not key:
+                return "missing required parameter 'key'"
+            candidate = Path(key)
+            if (
+                ".." in key
+                or key.startswith(("/", "\\"))
+                or "\\" in key
+                or candidate.is_absolute()
+                or bool(candidate.drive)
+            ):
+                return f"Envelope violation: key '{key}' contains illegal path traversal tokens"
+            if self.allowed_prefixes and not any(key.startswith(pfx) for pfx in self.allowed_prefixes):
+                return (
+                    f"Envelope violation: key '{key}' does not match any allowed prefix: "
+                    f"{self.allowed_prefixes}"
+                )
+        return None
+
+    def _resolve_paths(
+        self, bucket: str, key: str = "", require_key: bool = True
+    ) -> Tuple[Path, Optional[Path]]:
+        """Resolves bucket and optional object path strictly inside self.root."""
+        assert self.root is not None
+        root_resolved = self.root.resolve()
+        bucket_dir = (root_resolved / bucket).resolve()
+        if bucket_dir == root_resolved or not bucket_dir.is_relative_to(root_resolved):
+            raise ValueError(f"bucket '{bucket}' escapes storage root")
+
+        if not require_key or not key:
+            return bucket_dir, None
+
+        target_path = (bucket_dir / key).resolve()
+        if target_path == bucket_dir or not target_path.is_relative_to(bucket_dir):
+            raise ValueError(f"key '{key}' escapes bucket '{bucket}'")
+        return bucket_dir, target_path
+
     def execute(self, action: ActionPayload) -> ExecutionReceipt:
         action_name = action.action_name
         params = action.params
@@ -103,38 +157,11 @@ class StorageAdapter(BaseAdapter):
             )
 
         bucket = str(params.get("bucket") or "").strip()
-        if not bucket or not re.match(r"^[a-zA-Z0-9.\-_]{1,63}$", bucket):
-            return self._receipt(action=action, success=False, error=f"invalid bucket name '{bucket}'")
-
-        # Envelope check 1: Allowed buckets
-        if self.allowed_buckets and bucket not in self.allowed_buckets:
-            return self._receipt(
-                action=action,
-                success=False,
-                error=f"Envelope violation: bucket '{bucket}' is not permitted by allowed_buckets",
-            )
-
         key = str(params.get("key") or "").strip()
-        if action_name not in ("delete_bucket", "list_objects"):
-            if not key:
-                return self._receipt(action=action, success=False, error="missing required parameter 'key'")
-
-            # Path traversal rejection
-            if ".." in key or key.startswith("/") or "\\" in key:
-                return self._receipt(
-                    action=action,
-                    success=False,
-                    error=f"Envelope violation: key '{key}' contains illegal path traversal tokens",
-                )
-
-            # Envelope check 2: Allowed prefixes
-            if self.allowed_prefixes:
-                if not any(key.startswith(pfx) for pfx in self.allowed_prefixes):
-                    return self._receipt(
-                        action=action,
-                        success=False,
-                        error=f"Envelope violation: key '{key}' does not match any allowed prefix: {self.allowed_prefixes}",
-                    )
+        require_key = action_name not in ("delete_bucket", "list_objects")
+        err = self._validate_bucket_and_key(bucket, key, require_key=require_key)
+        if err:
+            return self._receipt(action=action, success=False, error=err)
 
         if self.is_simulation or not self.root:
             return self._receipt(
@@ -149,10 +176,11 @@ class StorageAdapter(BaseAdapter):
                 },
             )
 
-        bucket_dir = self.root / bucket
-        target_path = bucket_dir / key
-
         try:
+            bucket_dir, resolved_target = self._resolve_paths(
+                bucket, key, require_key=require_key
+            )
+            target_path = resolved_target if resolved_target is not None else bucket_dir
             if action_name == "put_object":
                 data = params.get("data")
                 if data is None:
@@ -239,15 +267,17 @@ class StorageAdapter(BaseAdapter):
                 )
 
             elif action_name == "copy_object":
-                dest_bucket = str(params.get("dest_bucket") or bucket)
-                dest_key = str(params.get("dest_key") or "")
-                if not dest_key or ".." in dest_key:
-                    return self._receipt(action=action, success=False, error="invalid dest_key")
+                dest_bucket = str(params.get("dest_bucket") or bucket).strip()
+                dest_key = str(params.get("dest_key") or "").strip()
+                dest_err = self._validate_bucket_and_key(dest_bucket, dest_key, require_key=True)
+                if dest_err:
+                    return self._receipt(action=action, success=False, error=f"invalid destination: {dest_err}")
 
                 if not target_path.is_file():
                     return self._receipt(action=action, success=False, error=f"source object '{key}' not found")
 
-                dest_path = self.root / dest_bucket / dest_key
+                _, dest_path = self._resolve_paths(dest_bucket, dest_key, require_key=True)
+                assert dest_path is not None
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(target_path, dest_path)
 

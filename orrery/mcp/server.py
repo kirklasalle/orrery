@@ -16,6 +16,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 from orrery.core.dispatcher import CycleDispatcher
+from orrery.core.interdiction import HALT_POLICY
 from orrery.core.types import ActionPayload, ActionRisk
 from orrery.core.telemetry import trace_span
 
@@ -207,10 +208,9 @@ class MCPGovernanceServer:
         with trace_span(f"orrery.mcp.{tool_name}", attributes={"orrery.mcp.tool": tool_name}):
             # Non-adapter meta-tools
             if tool_name == "orrery_audit_verify":
-                is_valid = True
-                error_msg = None
-                if hasattr(self.dispatcher.ledger, "verify_chain"):
-                    is_valid, error_msg = self.dispatcher.ledger.verify_chain()
+                verification = self.dispatcher.ledger.verify()
+                is_valid = verification.verified
+                error_msg = None if is_valid else verification.summary
                 return {
                     "content": [
                         {
@@ -257,6 +257,26 @@ class MCPGovernanceServer:
                 }
 
             target_adapter, action_name, default_risk = action_map[tool_name]
+            halt_reason = self.dispatcher.interdiction_gate.halted()
+            if halt_reason is not None:
+                self.dispatcher.ledger.append(
+                    "cycle.halted",
+                    summary=f"MCP tool {tool_name!r} halted by operator: {halt_reason}",
+                    policy_id=HALT_POLICY,
+                    tool_name=tool_name,
+                    action_name=action_name,
+                    adapter=target_adapter,
+                )
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"GOVERNANCE REFUSAL ({HALT_POLICY}): {halt_reason}",
+                        }
+                    ],
+                    "isError": True,
+                }
+
             payload = ActionPayload(
                 action_name=action_name,
                 target_adapter=target_adapter,
@@ -265,6 +285,41 @@ class MCPGovernanceServer:
             )
 
             receipt = await self.dispatcher.execute_action(payload)
+            self.dispatcher.ledger.append(
+                "action.executed" if receipt.success else "action.failed",
+                summary=f"{payload.action_name} via {payload.target_adapter}: "
+                + ("succeeded" if receipt.success else receipt.error or "failed"),
+                policy_id="LAW9-LEDGER",
+                action_id=payload.action_id,
+                action_name=payload.action_name,
+                adapter=payload.target_adapter,
+                risk=payload.risk.value,
+                approved_by=payload.approval.approver if payload.approval else None,
+                success=receipt.success,
+            )
+
+            breaches = self.dispatcher.invariant_monitor.evaluate(self.dispatcher.ledger.events)
+            for breach in breaches:
+                self.dispatcher.ledger.append(
+                    "invariant.breached",
+                    summary=breach.summary,
+                    policy_id=breach.policy_id,
+                    invariant_id=breach.invariant_id,
+                    observed=breach.observed,
+                    limit=breach.limit,
+                    window_seconds=breach.window_seconds,
+                    halted=self.dispatcher.invariant_monitor.halts,
+                )
+            if breaches and self.dispatcher.invariant_monitor.halts:
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"GOVERNANCE HALT (INVARIANT): {breaches[0].summary}",
+                        }
+                    ],
+                    "isError": True,
+                }
 
             if not receipt.success:
                 return {

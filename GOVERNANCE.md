@@ -239,10 +239,13 @@ Orrery marks their output, and they now live in `examples/simulated/` rather tha
 package, refused registration unless `adapters.allow_simulated` is switched on. Any
 benchmark run against them measures the state machine, not the world.
 
-`FileSystemAdapter` is the exception: it is real. It reads, writes, moves, and deletes
-actual files inside a sandbox root it refuses to escape, and `delete_file` is the first
-action in this codebase that can genuinely destroy something. Risk classification was
-theatre until that existed.
+`FileSystemAdapter`, `ProcessAdapter`, `DatabaseAdapter`, `StorageAdapter`, and `HttpAdapter`
+operate on real local/network targets (unlike `examples/simulated/`). Each concrete adapter
+exposes `sandbox_roots()` so `InterdictionGate` resolves relative action parameters
+against the adapter's real root(s); `DatabaseAdapter` enforces read-only SQLite
+connections on `query` actions and `Path.is_relative_to` sandbox confinement, and
+`StorageAdapter` enforces canonical bucket/key containment on both source and destination
+paths. Risk classification was theatre until real destructive actions existed.
 
 ### Law 8 — Equity and neutrality
 
@@ -254,9 +257,9 @@ theatre until that existed.
 
 | Policy | Status | Predicate | Mechanism | Test |
 | --- | --- | --- | --- | --- |
-| `LAW9-LEDGER` | ✅ Enforced | Every phase transition, action, and critique is recorded. | `EventLedger` receives an event per phase entry, action outcome, and critique, persisted as JSONL. | `test_ledger_persists_to_disk_and_reloads` |
+| `LAW9-LEDGER` | ✅ Enforced | Every phase transition, action, and critique is recorded. | `EventLedger` receives an event per phase entry, action outcome, and critique, persisted as JSONL with advisory file locking and startup chain hydration. | `test_ledger_persists_to_disk_and_reloads` |
 | `LAW9-APPEND` | ✅ Enforced | The audit record is append-only and survives rollback. | The ledger exposes no delete, update, or truncate operation, lives outside the rewindable `StateContext`, and records each rollback as an event. | `test_ledger_survives_backtracking` |
-| `LAW9-CHAIN` | ✅ Enforced | Altering past state is detectable. | Checkpoints and ledger events are SHA-256 hash-linked; verification runs on load and refuses a checkpoint whose digest does not match. | `test_edited_checkpoint_file_is_refused_on_load` |
+| `LAW9-CHAIN` | ✅ Enforced | Altering past state is detectable. | Checkpoints and ledger events are SHA-256 hash-linked; verification runs on load and refuses corrupted checkpoints or corrupted persisted ledger chains. | `test_edited_checkpoint_file_is_refused_on_load` |
 | `LAW9-SIGN` | ⚠️ Partial | The audit record is cryptographically attributable. | Ed25519 signing with the configured operator identity, verified against a public keyring; HMAC-SHA256 via `ORRERY_CHECKPOINT_KEY` when no operator key is present. `integrity.require_asymmetric` refuses HMAC-signed checkpoints outright. | `test_checkpoints_are_signed_with_the_operator_key` |
 | `LAW9-MONO` | ✅ Enforced | The record of work never moves backwards, even when work is rewound. | `backtrack()` takes `max()` on `step_count` and carries `lessons` and `attempt_log` across the rollback. | `test_step_count_never_regresses_across_backtracking` |
 | `LAW9-HINDSIGHT` | ⚠️ Partial | The record of what was tried and abandoned is used, not merely kept. | `hindsight.py` reads the ledger and drafts prohibitions and classifications for recurring refusals, holds, and failures, each carrying the sequences that justify it. **A proposal is inert** — unsigned, unenforced, and with a classification's risk left unset. | `test_a_proposal_is_inert` |

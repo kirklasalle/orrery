@@ -360,6 +360,20 @@ class CycleDispatcher:
         for action in context.planned_actions:
             if any(r.action_id == action.action_id for r in context.execution_receipts):
                 continue
+            halt_reason = self.interdiction_gate.halted()
+            if halt_reason is not None:
+                logger.warning("[Cycle %s] Halted mid-batch by operator: %s", context.cycle_id, halt_reason)
+                self.ledger.append(
+                    "cycle.halted",
+                    summary=f"Halted by operator: {halt_reason}",
+                    cycle_id=context.cycle_id,
+                    tier=context.tier.value,
+                    policy_id=HALT_POLICY,
+                    phase=context.current_phase.value,
+                )
+                context.lessons.append(f"Cycle halted by operator: {halt_reason}")
+                context.status = CycleStatus.HALTED
+                break
             receipt = await self.execute_action(action)
             context.execution_receipts.append(receipt)
             self.ledger.append(
@@ -440,9 +454,11 @@ class CycleDispatcher:
 
             # The gate ladder: forbidden, then unknown, then needing consent. Each answers a
             # different question, and a later one must never be able to answer an earlier one's.
-            interdiction = self.interdiction_gate.evaluate(action, getattr(adapter, "root", None))
-            if not interdiction.allowed:
-                return self._refuse(action, interdiction.policy_id, interdiction.reason)
+            sandbox_roots = adapter.sandbox_roots()
+            for adapter_root in sandbox_roots or (None,):
+                interdiction = self.interdiction_gate.evaluate(action, adapter_root)
+                if not interdiction.allowed:
+                    return self._refuse(action, interdiction.policy_id, interdiction.reason)
 
             # A breach is a known violation, not an unknown, so it is refused rather than held.
             reach = self.envelope_gate.evaluate(action, adapter)

@@ -3,6 +3,7 @@ Base Adapter Abstract Interface.
 """
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, ClassVar, Dict, Mapping, Optional, Tuple, TYPE_CHECKING
 from orrery.core.types import ActionPayload, ActionRisk, ExecutionReceipt, StateContext
 
@@ -36,6 +37,16 @@ class BaseAdapter(ABC):
     @classmethod
     def risk_for(cls, action_name: str) -> ActionRisk:
         return cls.declared_risks.get(action_name, ActionRisk.IRREVERSIBLE)
+
+    def sandbox_roots(self) -> Tuple[Path, ...]:
+        """
+        Filesystem root(s) this adapter operates under, used by governance gates to resolve
+        relative action parameters consistently across adapters.
+        """
+        root = getattr(self, "root", None)
+        if root is not None:
+            return (Path(root).resolve(),)
+        return ()
 
     @abstractmethod
     async def perceive_environment(self, context: StateContext) -> Dict[str, Any]:

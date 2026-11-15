@@ -208,3 +208,70 @@ def test_storage_adapter_edge_cases(tmp_path: Path):
     import asyncio
     env = asyncio.run(adapter.perceive_environment(StateContext()))
     assert "mybucket" in env["active_buckets"]
+
+
+def test_storage_rejects_dot_bucket_and_delete_bucket_traversal(tmp_path: Path):
+    parent_dir = tmp_path / "parent"
+    store_root = parent_dir / "store"
+    store_root.mkdir(parents=True)
+    sentinel = parent_dir / "keep_me.txt"
+    sentinel.write_text("do not delete", encoding="utf-8")
+
+    adapter = StorageAdapter(storage_root=store_root)
+    for bad_bucket in ("..", ".", "a/../b"):
+        res = adapter.execute(ActionPayload(
+            action_name="delete_bucket",
+            params={"bucket": bad_bucket},
+            tier=CycleTier.MICRO,
+            target_adapter="storage",
+        ))
+        assert not res.success, f"delete_bucket must reject {bad_bucket!r}"
+        assert sentinel.exists(), "parent sentinel must not be deleted"
+
+    for bad_bucket in ("..", "."):
+        res_put = adapter.execute(ActionPayload(
+            action_name="put_object",
+            params={"bucket": bad_bucket, "key": "escape.txt", "data": "x"},
+            tier=CycleTier.MICRO,
+            target_adapter="storage",
+        ))
+        assert not res_put.success
+
+
+def test_storage_copy_object_validates_dest_bucket_and_key(tmp_path: Path):
+    store_root = tmp_path / "store"
+    outside = tmp_path / "outside.txt"
+    adapter = StorageAdapter(
+        storage_root=store_root,
+        allowed_buckets=["allowed"],
+        allowed_prefixes=["safe/"],
+    )
+    put_res = adapter.execute(ActionPayload(
+        action_name="put_object",
+        params={"bucket": "allowed", "key": "safe/src.txt", "data": "secret"},
+        tier=CycleTier.MICRO,
+        target_adapter="storage",
+    ))
+    assert put_res.success
+
+    for dest_bucket, dest_key in (
+        ("..", "safe/out.txt"),
+        ("forbidden-bucket", "safe/out.txt"),
+        ("allowed", str(outside)),
+        ("allowed", "/abs/out.txt"),
+        ("allowed", "\\abs\\out.txt"),
+        ("allowed", "unsafe/out.txt"),
+    ):
+        res = adapter.execute(ActionPayload(
+            action_name="copy_object",
+            params={
+                "bucket": "allowed",
+                "key": "safe/src.txt",
+                "dest_bucket": dest_bucket,
+                "dest_key": dest_key,
+            },
+            tier=CycleTier.MICRO,
+            target_adapter="storage",
+        ))
+        assert not res.success, f"copy_object must reject dest=({dest_bucket!r}, {dest_key!r})"
+    assert not outside.exists()
