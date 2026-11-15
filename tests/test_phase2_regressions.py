@@ -428,3 +428,17 @@ def test_crit04_storage_and_openrouter_fail_closed_when_not_simulation():
     o_res = or_adapter.execute(o_act)
     assert not o_res.success
     assert "api_key" in o_res.error.lower() or "simulation" in o_res.error.lower()
+
+
+def test_gyroscope_webgl_route_served():
+    srv = GovernanceDashboardServer(host="127.0.0.1", port=0)
+    srv.start()
+    try:
+        port = srv._server.server_address[1]
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/gyroscope", timeout=2) as resp:
+            assert resp.status == 200
+            body = resp.read().decode("utf-8")
+            assert "ORRERY 3D GYROSCOPE" in body
+            assert "innerHTML" not in body
+    finally:
+        srv.stop()

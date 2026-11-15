@@ -25,6 +25,7 @@ from orrery.core.ledger import EventLedger
 logger = logging.getLogger(__name__)
 
 DASHBOARD_HTML_PATH = Path(__file__).parent / "dashboard.html"
+GYROSCOPE_HTML_PATH = Path(__file__).parent / "gyroscope.html"
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
@@ -70,6 +71,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 self._send_html(DASHBOARD_HTML_PATH.read_text(encoding="utf-8"))
             else:
                 self.send_error(HTTPStatus.NOT_FOUND, "Dashboard HTML asset not found.")
+            return
+
+        if self.path in ("/gyroscope", "/gyroscope.html"):
+            if GYROSCOPE_HTML_PATH.is_file():
+                self._send_html(GYROSCOPE_HTML_PATH.read_text(encoding="utf-8"))
+            else:
+                self.send_error(HTTPStatus.NOT_FOUND, "Gyroscope 3D HTML asset not found.")
             return
 
         if self.path.startswith("/api/ledger"):

@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Orrery — 3D Gyroscopic Governance Engine (WebGL)</title>
+  <style>
+    :root {
+      --bg: #070b14;
+      --panel: rgba(11, 17, 30, 0.84);
+      --border: rgba(212, 168, 83, 0.28);
+      --border-cyan: rgba(0, 229, 255, 0.32);
+      --brass: #e5b85b;
+      --cyan: #00e5ff;
+      --emerald: #10b981;
+      --crimson: #ef4444;
+      --amber: #f59e0b;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, monospace;
+      --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background: radial-gradient(circle at 50% 45%, #0e1729 0%, #060911 100%);
+      color: var(--text); font-family: var(--sans);
+    }
+
+    #viewport {
+      position: fixed; inset: 0; width: 100%; height: 100%;
+    }
+    canvas { display: block; width: 100%; height: 100%; }
+
+    /* Top Bar */
+    .hud-top {
+      position: fixed; top: 14px; left: 16px; right: 16px;
+      display: flex; align-items: center; justify-content: space-between;
+      pointer-events: none; z-index: 20; gap: 12px; flex-wrap: wrap;
+    }
+    .hud-brand {
+      pointer-events: auto;
+      display: flex; align-items: center; gap: 12px;
+      background: var(--panel); backdrop-filter: blur(12px);
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 8px 14px;
+    }
+    .brand-title {
+      font-weight: 700; letter-spacing: 0.14em; font-size: 0.92rem;
+      color: var(--brass);
+    }
+    .brand-sub {
+      font-size: 0.72rem; color: var(--muted); font-family: var(--mono);
+    }
+    .hud-pills {
+      pointer-events: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    .pill {
+      display: inline-flex; align-items: center; gap: 7px;
+      background: var(--panel); backdrop-filter: blur(12px);
+      border: 1px solid var(--border-cyan); border-radius: 999px;
+      padding: 6px 12px; font-size: 0.76rem; font-family: var(--mono);
+      color: var(--text); text-decoration: none; cursor: pointer;
+      transition: border-color 0.2s, transform 0.15s;
+    }
+    .pill:hover { border-color: var(--cyan); transform: translateY(-1px); }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--amber); box-shadow: 0 0 8px var(--amber);
+    }
+    .dot.live { background: var(--emerald); box-shadow: 0 0 10px var(--emerald); }
+    .dot.rec { background: var(--crimson); box-shadow: 0 0 12px var(--crimson); animation: blink 1s infinite; }
+    @keyframes blink { 50% { opacity: 0.3; } }
+
+    /* Side Control Panel */
+    .hud-controls {
+      position: fixed; top: 72px; left: 16px; width: 310px;
+      max-height: calc(100vh - 90px); overflow-y: auto;
+      background: var(--panel); backdrop-filter: blur(14px);
+      border: 1px solid var(--border); border-radius: 12px;
+      padding: 14px; z-index: 20;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .hud-controls::-webkit-scrollbar { width: 5px; }
+    .hud-controls::-webkit-scrollbar-thumb { background: rgba(229, 184, 91, 0.3); border-radius: 4px; }
+
+    .section-title {
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--brass);
+      border-bottom: 1px solid rgba(229, 184, 91, 0.18);
+      padding-bottom: 4px; margin-bottom: 4px;
+    }
+    .ctrl-row {
+      display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem;
+    }
+    .ctrl-label {
+      display: flex; justify-content: space-between; color: var(--muted);
+      font-family: var(--mono); font-size: 0.72rem;
+    }
+    .ctrl-label span:last-child { color: var(--cyan); }
+    input[type="range"] {
+      width: 100%; accent-color: var(--brass); cursor: pointer;
+    }
+    input[type="text"], input[type="password"], select {
+      width: 100%; background: rgba(6, 10, 19, 0.85);
+      border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 6px;
+      color: var(--text); padding: 6px 8px; font-size: 0.74rem;
+      font-family: var(--mono);
+    }
+    .btn-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    }
+    .btn {
+      background: rgba(15, 23, 42, 0.9); color: var(--text);
+      border: 1px solid rgba(229, 184, 91, 0.35); border-radius: 6px;
+      padding: 7px 8px; font-size: 0.73rem; font-weight: 600;
+      cursor: pointer; transition: all 0.15s; text-align: center;
+    }
+    .btn:hover { background: rgba(229, 184, 91, 0.14); border-color: var(--brass); }
+    .btn.cyan { border-color: var(--border-cyan); color: var(--cyan); }
+    .btn.cyan:hover { background: rgba(0, 229, 255, 0.12); border-color: var(--cyan); }
+    .btn.danger { border-color: rgba(239, 68, 68, 0.45); color: #fca5a5; }
+    .btn.danger:hover { background: rgba(239, 68, 68, 0.16); border-color: var(--crimson); }
+    .btn.active { background: rgba(0, 229, 255, 0.18); border-color: var(--cyan); color: #fff; }
+
+    /* Right Telemetry Panel */
+    .hud-telemetry {
+      position: fixed; top: 72px; right: 16px; width: 320px;
+      max-height: calc(100vh - 90px);
+      background: var(--panel); backdrop-filter: blur(14px);
+      border: 1px solid var(--border-cyan); border-radius: 12px;
+      padding: 14px; z-index: 20;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .gate-status-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 5px;
+    }
+    .gate-badge {
+      background: rgba(6, 10, 19, 0.75); border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 6px; padding: 5px 7px; font-size: 0.68rem; font-family: var(--mono);
+      display: flex; justify-content: space-between; align-items: center;
+      transition: border-color 0.25s, background 0.25s;
+    }
+    .gate-badge.ok { border-color: rgba(0, 229, 255, 0.45); color: var(--cyan); }
+    .gate-badge.trip { border-color: var(--crimson); background: rgba(239, 68, 68, 0.18); color: #fecaca; }
+
+    .feed {
+      overflow-y: auto; max-height: 360px; display: flex; flex-direction: column; gap: 6px;
+    }
+    .feed-item {
+      background: rgba(6, 10, 19, 0.78); border-left: 3px solid var(--cyan);
+      border-radius: 5px; padding: 6px 8px; font-size: 0.71rem;
+    }
+    .feed-item.refused { border-left-color: var(--crimson); }
+    .feed-meta {
+      font-family: var(--mono); font-size: 0.65rem; color: var(--muted);
+      display: flex; justify-content: space-between; margin-bottom: 2px;
+    }
+    .feed-title { color: var(--text); word-break: break-word; }
+
+    /* Bottom Legend */
+    .hud-legend {
+      position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+      background: var(--panel); backdrop-filter: blur(10px);
+      border: 1px solid var(--border); border-radius: 999px;
+      padding: 6px 16px; font-size: 0.71rem; font-family: var(--mono);
+      color: var(--muted); z-index: 20; pointer-events: none;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 960px) {
+      .hud-telemetry { display: none; }
+      .hud-controls { width: 260px; }
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="viewport"></div>
+
+  <div class="hud-top">
+    <div class="hud-brand">
+      <div>
+        <div class="brand-title">ORRERY 3D GYROSCOPE</div>
+        <div class="brand-sub">4-Tier Cognitive Orbit &bull; 6-Gate Fail-Closed Pipeline</div>
+      </div>
+    </div>
+    <div class="hud-pills">
+      <div class="pill" id="connPill">
+        <span class="dot" id="connDot"></span>
+        <span id="connLabel">DEMO MODE (OFFLINE)</span>
+      </div>
+      <div class="pill" id="recPill" style="display:none;">
+        <span class="dot rec"></span>
+        <span id="recTimer">REC 00:00</span>
+      </div>
+      <a class="pill" href="/">← Audit Console</a>
+    </div>
+  </div>
+
+  <aside class="hud-controls">
+    <div>
+      <div class="section-title">Gyroscope Physics</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span>MICRO Rotor RPM</span><span id="rpmVal">180</span></div>
+        <input id="rpmSlider" type="range" min="0" max="600" value="180" />
+      </div>
+      <div class="ctrl-row" style="margin-top:6px;">
+        <div class="ctrl-label"><span>Precession Speed</span><span id="precVal">1.0x</span></div>
+        <input id="precSlider" type="range" min="0" max="30" value="10" />
+      </div>
+      <div class="ctrl-row" style="margin-top:6px;">
+        <div class="ctrl-label"><span>Explode Tiers</span><span id="expVal">0%</span></div>
+        <input id="expSlider" type="range" min="0" max="100" value="0" />
+      </div>
+      <div class="btn-grid" style="margin-top:8px;">
+        <button class="btn" id="pauseBtn">Pause Motion</button>
+        <button class="btn cyan" id="autoOrbitBtn">Cinematic Orbit</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">Camera Presets</div>
+      <div class="btn-grid">
+        <button class="btn active" data-cam="hero">Hero Astrolabe</button>
+        <button class="btn" data-cam="top">Top-Down Orbit</button>
+        <button class="btn" data-cam="gates">6-Gate Ring</button>
+        <button class="btn" data-cam="core">MICRO Core</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">Video &amp; Still Studio</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span>Capture Preset</span></div>
+        <select id="recDuration">
+          <option value="10">10s Seamless Loop (60 FPS)</option>
+          <option value="20">20s Full Showcase (60 FPS)</option>
+          <option value="0">Manual Start / Stop</option>
+        </select>
+      </div>
+      <div class="btn-grid" style="margin-top:8px;">
+        <button class="btn cyan" id="recBtn">Record Video (.webm)</button>
+        <button class="btn" id="snapBtn">Save PNG Still</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">Real-Time Orrery Link</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span>Server Origin</span></div>
+        <input id="serverUrl" type="text" placeholder="http://127.0.0.1:8080" />
+      </div>
+      <div class="ctrl-row" style="margin-top:6px;">
+        <div class="ctrl-label"><span>Bearer Token (if non-loopback)</span></div>
+        <input id="authToken" type="password" placeholder="Optional bearer token" />
+      </div>
+      <div class="btn-grid" style="margin-top:8px;">
+        <button class="btn cyan" id="connectBtn">Connect Live</button>
+        <button class="btn" id="simAllowBtn">Sim: Pass 6 Gates</button>
+      </div>
+      <button class="btn danger" id="simTripBtn" style="width:100%; margin-top:6px;">Sim: Interdict at Gate</button>
+    </div>
+  </aside>
+
+  <aside class="hud-telemetry">
+    <div class="section-title">6-Gate Fail-Closed Stack</div>
+    <div class="gate-status-grid" id="gateGrid">
+      <div class="gate-badge ok" data-gate="0"><span>1. Interdiction</span><span>ARMED</span></div>
+      <div class="gate-badge ok" data-gate="1"><span>2. Envelope</span><span>ARMED</span></div>
+      <div class="gate-badge ok" data-gate="2"><span>3. PolicyEngine</span><span>ARMED</span></div>
+      <div class="gate-badge ok" data-gate="3"><span>4. ApprovalGate</span><span>ARMED</span></div>
+      <div class="gate-badge ok" data-gate="4"><span>5. RateLimit</span><span>ARMED</span></div>
+      <div class="gate-badge ok" data-gate="5"><span>6. Sandbox</span><span>READY</span></div>
+    </div>
+
+    <div class="section-title" style="margin-top:4px;">SHA-256 EventLedger Stream</div>
+    <div class="feed" id="telemetryFeed"></div>
+  </aside>
+
+  <div class="hud-legend">
+    Drag: Orbit &bull; Scroll: Zoom &bull; Right-Drag: Pan &bull; Real-Time Ledger Telemetry Synced
+  </div>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+    import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+    import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+    import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+    import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+
+    // -------------------------------------------------------------------------
+    // 1. Renderer, Scene, PBR Environment & Post-Processing
+    // -------------------------------------------------------------------------
+    const container = document.getElementById("viewport");
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: "high-performance",
+      preserveDrawingBuffer: true,
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x060a13);
+    scene.fog = new THREE.FogExp2(0x060a13, 0.028);
+
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+    const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 150);
+    camera.position.set(0, 5.8, 12.5);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.055;
+    controls.minDistance = 3.5;
+    controls.maxDistance = 26;
+    controls.target.set(0, 0.5, 0);
+
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.42,
+      0.55,
+      0.72
+    );
+    composer.addPass(bloomPass);
+    composer.addPass(new OutputPass());
+
+    // Studio Lighting
+    const keyLight = new THREE.DirectionalLight(0xfff2d6, 2.4);
+    keyLight.position.set(8, 14, 10);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(2048, 2048);
+    scene.add(keyLight);
+
+    const rimCyan = new THREE.PointLight(0x00e5ff, 6.0, 24);
+    rimCyan.position.set(-7, 4, -6);
+    scene.add(rimCyan);
+
+    const fillBrass = new THREE.PointLight(0xe5b85b, 4.0, 20);
+    fillBrass.position.set(6, -3, 7);
+    scene.add(fillBrass);
+
+    // -------------------------------------------------------------------------
+    // 2. Procedural Engraved Dial & Brushed Metal Textures
+    // -------------------------------------------------------------------------
+    function createDialTexture(labelText, ringTicks = 60, accent = "#e5b85b") {
+      const c = document.createElement("canvas");
+      c.width = 1024;
+      c.height = 256;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#161d2b";
+      ctx.fillRect(0, 0, c.width, c.height);
+
+      // Subtle brushed striations
+      for (let y = 0; y < c.height; y += 2) {
+        ctx.fillStyle = y % 4 === 0 ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.06)";
+        ctx.fillRect(0, y, c.width, 1);
+      }
+
+      ctx.strokeStyle = accent;
+      ctx.fillStyle = accent;
+      for (let i = 0; i < ringTicks; i++) {
+        const x = (i / ringTicks) * c.width;
+        const major = i % 5 === 0;
+        ctx.lineWidth = major ? 3 : 1.2;
+        ctx.beginPath();
+        ctx.moveTo(x, 8);
+        ctx.lineTo(x, major ? 44 : 24);
+        ctx.stroke();
+
+        if (major) {
+          ctx.font = "bold 22px monospace";
+          ctx.fillText(String(i === 0 ? 60 : i), x + 4, 72);
+        }
+      }
+
+      ctx.font = "bold 36px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillText(labelText, c.width * 0.25, 165);
+      ctx.fillText(labelText, c.width * 0.75, 165);
+
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.ClampToEdgeWrapping;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    }
+
+    function createLabelSprite(text, color = "#00e5ff") {
+      const c = document.createElement("canvas");
+      c.width = 512;
+      c.height = 96;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "rgba(7, 11, 20, 0.82)";
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(8, 12, 496, 72, 16);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = "#f8fafc";
+      ctx.font = "bold 28px monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, 256, 48);
+
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+      const sp = new THREE.Sprite(mat);
+      sp.scale.set(2.3, 0.43, 1);
+      return sp;
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. PBR Materials
+    // -------------------------------------------------------------------------
+    const brassMat = new THREE.MeshStandardMaterial({
+      color: 0xd9a84e,
+      metalness: 0.92,
+      roughness: 0.22,
+    });
+    const darkBrassMat = new THREE.MeshStandardMaterial({
+      color: 0x9c7328,
+      metalness: 0.88,
+      roughness: 0.34,
+    });
+    const obsidianMat = new THREE.MeshStandardMaterial({
+      color: 0x131b2b,
+      metalness: 0.78,
+      roughness: 0.28,
+    });
+    const cyanEmissiveMat = new THREE.MeshStandardMaterial({
+      color: 0x00e5ff,
+      emissive: 0x00e5ff,
+      emissiveIntensity: 2.2,
+      metalness: 0.2,
+      roughness: 0.15,
+    });
+
+    // -------------------------------------------------------------------------
+    // 4. Construct the 4-Tier Nested Gyroscopic Orrery
+    // -------------------------------------------------------------------------
+    const rootGroup = new THREE.Group();
+    rootGroup.position.y = 0.5;
+    scene.add(rootGroup);
+
+    // Base Pedestal & SHA-256 EventLedger Ring
+    const pedestalGroup = new THREE.Group();
+    pedestalGroup.position.y = -4.2;
+    scene.add(pedestalGroup);
+
+    const baseDisc = new THREE.Mesh(new THREE.CylinderGeometry(5.8, 6.2, 0.35, 64), obsidianMat);
+    baseDisc.receiveShadow = true;
+    pedestalGroup.add(baseDisc);
+
+    const ledgerRing = new THREE.Mesh(
+      new THREE.TorusGeometry(5.6, 0.06, 16, 128),
+      cyanEmissiveMat.clone()
+    );
+    ledgerRing.rotation.x = Math.PI / 2;
+    ledgerRing.position.y = 0.2;
+    pedestalGroup.add(ledgerRing);
+
+    const ledgerSprite = createLabelSprite("SHA-256 HASH-CHAINED EVENTLEDGER", "#00e5ff");
+    ledgerSprite.position.set(0, 0.65, 5.7);
+    ledgerSprite.scale.set(3.4, 0.58, 1);
+    pedestalGroup.add(ledgerSprite);
+
+    // Support Yoke / Gimbal Trunnion Frame
+    const yokeArc = new THREE.Mesh(
+      new THREE.TorusGeometry(4.55, 0.12, 20, 96, Math.PI),
+      darkBrassMat
+    );
+    yokeArc.rotation.z = Math.PI;
+    rootGroup.add(yokeArc);
+
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.34, 1.3, 24), brassMat);
+    stem.position.y = -4.35;
+    rootGroup.add(stem);
+
+    // Helper: Create involute-style gear mesh
+    function createGear(radius, teeth, thickness, mat) {
+      const g = new THREE.Group();
+      const rim = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, thickness, 32), mat);
+      rim.rotation.x = Math.PI / 2;
+      g.add(rim);
+      const hole = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.65, thickness * 0.35, 12, 32), darkBrassMat);
+      g.add(hole);
+      const toothGeo = new THREE.BoxGeometry(radius * 0.16, radius * 0.22, thickness * 0.92);
+      for (let i = 0; i < teeth; i++) {
+        const angle = (i / teeth) * Math.PI * 2;
+        const t = new THREE.Mesh(toothGeo, mat);
+        t.position.set(Math.cos(angle) * (radius + radius * 0.08), Math.sin(angle) * (radius + radius * 0.08), 0);
+        t.rotation.z = angle + Math.PI / 2;
+        g.add(t);
+      }
+      return g;
+    }
+
+    // TIER 1: META (Strategic) Outer Gimbal
+    const metaGroup = new THREE.Group();
+    rootGroup.add(metaGroup);
+
+    const metaMat = new THREE.MeshStandardMaterial({
+      map: createDialTexture("META (STRATEGIC)", 72, "#e5b85b"),
+      metalness: 0.72,
+      roughness: 0.26,
+    });
+    const metaRing = new THREE.Mesh(new THREE.CylinderGeometry(4.0, 4.0, 0.42, 96, 1, true), metaMat);
+    metaRing.material.side = THREE.DoubleSide;
+    metaGroup.add(metaRing);
+
+    const metaTrimTop = new THREE.Mesh(new THREE.TorusGeometry(4.0, 0.055, 16, 96), brassMat);
+    metaTrimTop.rotation.x = Math.PI / 2;
+    metaTrimTop.position.y = 0.21;
+    metaGroup.add(metaTrimTop);
+
+    const metaTrimBot = metaTrimTop.clone();
+    metaTrimBot.position.y = -0.21;
+    metaGroup.add(metaTrimBot);
+
+    const metaGearL = createGear(0.55, 14, 0.12, brassMat);
+    metaGearL.position.set(-4.2, 0, 0);
+    metaGearL.rotation.y = Math.PI / 2;
+    metaGroup.add(metaGearL);
+
+    const metaGearR = createGear(0.55, 14, 0.12, brassMat);
+    metaGearR.position.set(4.2, 0, 0);
+    metaGearR.rotation.y = Math.PI / 2;
+    metaGroup.add(metaGearR);
+
+    // TIER 2: MACRO (Campaign) Second Gimbal
+    const macroGroup = new THREE.Group();
+    metaGroup.add(macroGroup);
+
+    const macroMat = new THREE.MeshStandardMaterial({
+      map: createDialTexture("MACRO (CAMPAIGN)", 60, "#f5d07a"),
+      metalness: 0.85,
+      roughness: 0.22,
+    });
+    const macroRing = new THREE.Mesh(new THREE.CylinderGeometry(3.15, 3.15, 0.36, 80, 1, true), macroMat);
+    macroRing.material.side = THREE.DoubleSide;
+    macroGroup.add(macroRing);
+
+    const macroTrim1 = new THREE.Mesh(new THREE.TorusGeometry(3.15, 0.05, 16, 80), brassMat);
+    macroTrim1.rotation.x = Math.PI / 2;
+    macroTrim1.position.y = 0.18;
+    macroGroup.add(macroTrim1);
+    const macroTrim2 = macroTrim1.clone();
+    macroTrim2.position.y = -0.18;
+    macroGroup.add(macroTrim2);
+
+    // Trunnion pins connecting META <-> MACRO
+    const pinGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.9, 16);
+    const pinL = new THREE.Mesh(pinGeo, brassMat);
+    pinL.rotation.z = Math.PI / 2;
+    pinL.position.set(-3.58, 0, 0);
+    macroGroup.add(pinL);
+    const pinR = pinL.clone();
+    pinR.position.set(3.58, 0, 0);
+    macroGroup.add(pinR);
+
+    // TIER 3: MESO (Tactical) Third Gimbal
+    const mesoGroup = new THREE.Group();
+    macroGroup.add(mesoGroup);
+
+    const mesoRing = new THREE.Mesh(new THREE.TorusGeometry(2.3, 0.11, 20, 80), obsidianMat);
+    mesoGroup.add(mesoRing);
+
+    const mesoConduit = new THREE.Mesh(new THREE.TorusGeometry(2.3, 0.032, 12, 80), cyanEmissiveMat);
+    mesoConduit.position.z = 0.11;
+    mesoGroup.add(mesoConduit);
+
+    const mesoConduitBack = mesoConduit.clone();
+    mesoConduitBack.position.z = -0.11;
+    mesoGroup.add(mesoConduitBack);
+
+    // TIER 4: MICRO (Execution) High-RPM Gyroscopic Flywheel Core
+    const microGroup = new THREE.Group();
+    mesoGroup.add(microGroup);
+
+    const rotorGroup = new THREE.Group();
+    microGroup.add(rotorGroup);
+
+    const flywheelRim = new THREE.Mesh(new THREE.TorusGeometry(1.32, 0.14, 24, 64), brassMat);
+    flywheelRim.rotation.x = Math.PI / 2;
+    rotorGroup.add(flywheelRim);
+
+    const flywheelInner = new THREE.Mesh(new THREE.CylinderGeometry(1.18, 1.18, 0.08, 48), obsidianMat);
+    rotorGroup.add(flywheelInner);
+
+    // Turbine spokes
+    for (let i = 0; i < 6; i++) {
+      const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, 2.35), brassMat);
+      spoke.rotation.y = (i / 6) * Math.PI;
+      rotorGroup.add(spoke);
+    }
+
+    // Axial Spindle
+    const spindle = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.2, 20), brassMat);
+    microGroup.add(spindle);
+
+    // Glowing Core Crystal
+    const coreSphere = new THREE.Mesh(new THREE.OctahedronGeometry(0.36, 2), cyanEmissiveMat);
+    rotorGroup.add(coreSphere);
+
+    // -------------------------------------------------------------------------
+    // 5. 6-Gate Fail-Closed Orbital Checkpoints
+    // -------------------------------------------------------------------------
+    const GATE_NAMES = [
+      "1. InterdictionGate",
+      "2. EnvelopeGate",
+      "3. PolicyEngine",
+      "4. ApprovalGate",
+      "5. RateLimitGate",
+      "6. Sandboxed Adapter",
+    ];
+    const gatePylons = [];
+    const gateRadius = 5.45;
+
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2 - Math.PI / 2;
+      const pylon = new THREE.Group();
+      pylon.position.set(Math.cos(angle) * gateRadius, -1.2, Math.sin(angle) * gateRadius);
+      pylon.lookAt(0, -1.2, 0);
+
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.42, 2.2, 0.24), obsidianMat);
+      pylon.add(body);
+
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(0.48, 2.26, 0.16), darkBrassMat);
+      pylon.add(frame);
+
+      const crystalMat = cyanEmissiveMat.clone();
+      const crystal = new THREE.Mesh(new THREE.BoxGeometry(0.18, 1.45, 0.28), crystalMat);
+      pylon.add(crystal);
+
+      const lbl = createLabelSprite(GATE_NAMES[i], "#e5b85b");
+      lbl.position.set(0, 1.55, 0);
+      pylon.add(lbl);
+
+      scene.add(pylon);
+      gatePylons.push({
+        group: pylon,
+        crystalMat,
+        flashTimer: 0,
+        tripState: false,
+        basePos: pylon.position.clone(),
+      });
+    }
+
+    // Telemetry Pulses traversing 6 gates
+    const activePulses = [];
+    const pulseGeo = new THREE.SphereGeometry(0.14, 16, 16);
+
+    function spawnTelemetryPulse(isRefused = false, tripGateIdx = 0) {
+      const color = isRefused ? 0xef4444 : 0x00e5ff;
+      const mat = new THREE.MeshBasicMaterial({ color });
+      const mesh = new THREE.Mesh(pulseGeo, mat);
+      scene.add(mesh);
+      activePulses.push({
+        mesh,
+        progress: 0,
+        isRefused,
+        tripGateIdx,
+        speed: 0.72,
+      });
+    }
+
+    function flashGate(idx, isTrip) {
+      if (idx < 0 || idx >= gatePylons.length) return;
+      const g = gatePylons[idx];
+      g.flashTimer = 1.4;
+      g.tripState = isTrip;
+      const badge = document.querySelector(`.gate-badge[data-gate="${idx}"]`);
+      if (badge) {
+        badge.classList.remove("ok", "trip");
+        badge.classList.add(isTrip ? "trip" : "ok");
+        badge.lastElementChild.textContent = isTrip ? "INTERDICT" : "PASS";
+        setTimeout(() => {
+          badge.classList.remove("trip");
+          badge.classList.add("ok");
+          badge.lastElementChild.textContent = idx === 5 ? "READY" : "ARMED";
+        }, 1600);
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 6. Controls, Presets, Live Connection & 60FPS Video Studio
+    // -------------------------------------------------------------------------
+    let paused = false;
+    let autoOrbit = false;
+    let targetRpm = 180;
+    let precSpeed = 1.0;
+    let explodeFactor = 0.0;
+    let camLerpTarget = null;
+
+    const rpmSlider = document.getElementById("rpmSlider");
+    const precSlider = document.getElementById("precSlider");
+    const expSlider = document.getElementById("expSlider");
+
+    rpmSlider.addEventListener("input", (e) => {
+      targetRpm = Number(e.target.value);
+      document.getElementById("rpmVal").textContent = String(targetRpm);
+    });
+    precSlider.addEventListener("input", (e) => {
+      precSpeed = Number(e.target.value) / 10;
+      document.getElementById("precVal").textContent = `${precSpeed.toFixed(1)}x`;
+    });
+    expSlider.addEventListener("input", (e) => {
+      explodeFactor = Number(e.target.value) / 100;
+      document.getElementById("expVal").textContent = `${e.target.value}%`;
+    });
+
+    document.getElementById("pauseBtn").addEventListener("click", (e) => {
+      paused = !paused;
+      e.target.textContent = paused ? "Resume Motion" : "Pause Motion";
+      e.target.classList.toggle("active", paused);
+    });
+
+    document.getElementById("autoOrbitBtn").addEventListener("click", (e) => {
+      autoOrbit = !autoOrbit;
+      controls.autoRotate = autoOrbit;
+      controls.autoRotateSpeed = 1.8;
+      e.target.classList.toggle("active", autoOrbit);
+    });
+
+    const CAM_PRESETS = {
+      hero: { pos: [0, 5.8, 12.5], target: [0, 0.3, 0] },
+      top: { pos: [0, 14.5, 0.8], target: [0, 0.3, 0] },
+      gates: { pos: [8.8, 2.2, 8.8], target: [0, -0.5, 0] },
+      core: { pos: [1.8, 1.2, 4.2], target: [0, 0.5, 0] },
+    };
+
+    document.querySelectorAll("[data-cam]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-cam]").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        const p = CAM_PRESETS[btn.dataset.cam];
+        camLerpTarget = {
+          pos: new THREE.Vector3(...p.pos),
+          target: new THREE.Vector3(...p.target),
+        };
+      });
+    });
+
+    // Video Recorder (60 FPS WebM) & PNG Snapshot
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let recInterval = null;
+    let recStart = 0;
+
+    function stopRecording() {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+      }
+      clearInterval(recInterval);
+      document.getElementById("recPill").style.display = "none";
+      const btn = document.getElementById("recBtn");
+      btn.textContent = "Record Video (.webm)";
+      btn.classList.remove("danger");
+      btn.classList.add("cyan");
+    }
+
+    document.getElementById("recBtn").addEventListener("click", () => {
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        stopRecording();
+        return;
+      }
+      const stream = renderer.domElement.captureStream(60);
+      const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+        ? "video/webm;codecs=vp9"
+        : "video/webm";
+      recordedChunks = [];
+      mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 16_000_000 });
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+      };
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `orrery-gyroscope-${Date.now()}.webm`;
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+
+      // Enable smooth cinematic orbit during video capture if not already on
+      if (!autoOrbit) {
+        autoOrbit = true;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 1.8;
+        document.getElementById("autoOrbitBtn").classList.add("active");
+      }
+
+      mediaRecorder.start(250);
+      recStart = Date.now();
+      document.getElementById("recPill").style.display = "inline-flex";
+      const btn = document.getElementById("recBtn");
+      btn.textContent = "Stop Recording";
+      btn.classList.remove("cyan");
+      btn.classList.add("danger");
+
+      const durSec = Number(document.getElementById("recDuration").value);
+      recInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - recStart) / 1000);
+        const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
+        const ss = String(elapsed % 60).padStart(2, "0");
+        document.getElementById("recTimer").textContent = `REC ${mm}:${ss}`;
+        if (durSec > 0 && elapsed >= durSec) {
+          stopRecording();
+        }
+      }, 250);
+    });
+
+    document.getElementById("snapBtn").addEventListener("click", () => {
+      composer.render();
+      const a = document.createElement("a");
+      a.href = renderer.domElement.toDataURL("image/png");
+      a.download = `orrery-gyroscope-still-${Date.now()}.png`;
+      a.click();
+    });
+
+    // Telemetry Feed Rendering (XSS-safe textContent only)
+    const feedEl = document.getElementById("telemetryFeed");
+    function appendFeedItem(ev) {
+      const item = document.createElement("div");
+      const isRefused = String(ev.type || "").toLowerCase() === "refused" ||
+        String(ev.type || "").toLowerCase() === "halted" ||
+        String(ev.title || "").toLowerCase().includes("refused");
+      item.className = `feed-item${isRefused ? " refused" : ""}`;
+
+      const meta = document.createElement("div");
+      meta.className = "feed-meta";
+      const left = document.createElement("span");
+      left.textContent = `#${ev.sequence ?? "?"} • ${ev.policy || "ORRERY"}`;
+      const right = document.createElement("span");
+      right.textContent = String(ev.time || "").slice(11, 19) || String(ev.time || "");
+      meta.appendChild(left);
+      meta.appendChild(right);
+
+      const title = document.createElement("div");
+      title.className = "feed-title";
+      title.textContent = String(ev.title || ev.type || "Event");
+
+      item.appendChild(meta);
+      item.appendChild(title);
+      feedEl.prepend(item);
+      while (feedEl.children.length > 25) {
+        feedEl.removeChild(feedEl.lastChild);
+      }
+    }
+
+    function mapPolicyToGate(policyId) {
+      const p = String(policyId || "").toUpperCase();
+      if (p.includes("INTERDICT") || p.includes("HALT")) return 0;
+      if (p.includes("ENVELOPE") || p.includes("SANDBOX")) return 1;
+      if (p.includes("POLICY") || p.includes("LAW3")) return 2;
+      if (p.includes("RISK") || p.includes("APPROVAL")) return 3;
+      if (p.includes("RATE")) return 4;
+      return 5;
+    }
+
+    // Live Polling against Orrery GovernanceDashboardServer
+    const serverUrlInput = document.getElementById("serverUrl");
+    if (window.location.protocol.startsWith("http")) {
+      serverUrlInput.value = window.location.origin;
+    } else {
+      serverUrlInput.value = "http://127.0.0.1:8080";
+    }
+
+    let lastSeenSeq = -1;
+    let pollHandle = null;
+
+    async function pollLiveOrrery() {
+      const base = serverUrlInput.value.replace(/\/+$/, "");
+      const token = document.getElementById("authToken").value.trim();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      try {
+        const res = await fetch(`${base}/api/ledger`, { headers });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        document.getElementById("connDot").classList.add("live");
+        document.getElementById("connLabel").textContent = `LIVE • ${data.total_events} EVENTS`;
+
+        const events = Array.isArray(data.events) ? data.events : [];
+        if (lastSeenSeq === -1) {
+          events.slice(-8).forEach((ev) => appendFeedItem(ev));
+          lastSeenSeq = events.length ? events[events.length - 1].sequence : 0;
+        } else {
+          const fresh = events.filter((ev) => (ev.sequence ?? 0) > lastSeenSeq);
+          fresh.forEach((ev) => {
+            appendFeedItem(ev);
+            const refused = String(ev.type || "").includes("refused") || String(ev.type || "").includes("halted");
+            const gateIdx = mapPolicyToGate(ev.policy);
+            spawnTelemetryPulse(refused, gateIdx);
+            if (ev.sequence > lastSeenSeq) lastSeenSeq = ev.sequence;
+          });
+        }
+      } catch (_err) {
+        document.getElementById("connDot").classList.remove("live");
+        document.getElementById("connLabel").textContent = "DEMO MODE (OFFLINE)";
+      }
+    }
+
+    document.getElementById("connectBtn").addEventListener("click", () => {
+      lastSeenSeq = -1;
+      pollLiveOrrery();
+      if (pollHandle) clearInterval(pollHandle);
+      pollHandle = setInterval(pollLiveOrrery, 1000);
+    });
+
+    // Auto-start polling when served over HTTP(S)
+    if (window.location.protocol.startsWith("http")) {
+      pollLiveOrrery();
+      pollHandle = setInterval(pollLiveOrrery, 1200);
+    }
+
+    // Offline Simulation Buttons
+    let simSeq = 100;
+    document.getElementById("simAllowBtn").addEventListener("click", () => {
+      simSeq += 1;
+      spawnTelemetryPulse(false, 5);
+      appendFeedItem({
+        sequence: simSeq,
+        type: "executed",
+        policy: "LAW9-LEDGER",
+        time: new Date().toISOString(),
+        title: "read_file on sandboxed adapter: verified & committed",
+      });
+    });
+    document.getElementById("simTripBtn").addEventListener("click", () => {
+      simSeq += 1;
+      const gateIdx = Math.floor(Math.random() * 5);
+      const policies = ["LAW1-INTERDICT", "LAW2-ENVELOPE", "LAW3-POLICY", "RISK-001", "RATE-001"];
+      spawnTelemetryPulse(true, gateIdx);
+      appendFeedItem({
+        sequence: simSeq,
+        type: "refused",
+        policy: policies[gateIdx],
+        time: new Date().toISOString(),
+        title: `Action blocked at ${GATE_NAMES[gateIdx]} (fail-closed)`,
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    // 7. Animation Loop (Gyroscopic Precession & Gate Pulses)
+    // -------------------------------------------------------------------------
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.05);
+      const t = clock.elapsedTime;
+
+      if (!paused) {
+        // 4-Tier Gyroscopic Kinematics
+        metaGroup.rotation.y += dt * 0.28 * precSpeed;
+        metaGearL.rotation.x += dt * 0.9 * precSpeed;
+        metaGearR.rotation.x -= dt * 0.9 * precSpeed;
+
+        macroGroup.rotation.x = Math.sin(t * 0.45 * precSpeed) * 0.65;
+        macroGroup.rotation.z += dt * 0.35 * precSpeed;
+
+        mesoGroup.rotation.z += dt * 0.55 * precSpeed;
+        mesoGroup.rotation.x = Math.cos(t * 0.65 * precSpeed) * 0.5;
+
+        const angularVel = (targetRpm / 60) * Math.PI * 2;
+        rotorGroup.rotation.y += dt * angularVel;
+        coreSphere.rotation.y -= dt * 1.6;
+        coreSphere.rotation.x += dt * 0.9;
+      }
+
+      // Explode View Interpolation
+      const exp = explodeFactor;
+      metaGroup.position.y = THREE.MathUtils.lerp(metaGroup.position.y, exp * 2.2, 0.1);
+      macroGroup.position.y = THREE.MathUtils.lerp(macroGroup.position.y, exp * 0.8, 0.1);
+      mesoGroup.position.y = THREE.MathUtils.lerp(mesoGroup.position.y, -exp * 0.6, 0.1);
+      microGroup.position.y = THREE.MathUtils.lerp(microGroup.position.y, -exp * 1.8, 0.1);
+      gatePylons.forEach((g) => {
+        const dir = g.basePos.clone().setY(0).normalize();
+        g.group.position.x = THREE.MathUtils.lerp(g.group.position.x, g.basePos.x + dir.x * exp * 2.4, 0.1);
+        g.group.position.z = THREE.MathUtils.lerp(g.group.position.z, g.basePos.z + dir.z * exp * 2.4, 0.1);
+      });
+
+      // Gate Crystal Flash Decay
+      gatePylons.forEach((g) => {
+        if (g.flashTimer > 0) {
+          g.flashTimer = Math.max(0, g.flashTimer - dt);
+          const color = g.tripState ? 0xef4444 : 0x00e5ff;
+          g.crystalMat.color.setHex(color);
+          g.crystalMat.emissive.setHex(color);
+          g.crystalMat.emissiveIntensity = 2.2 + g.flashTimer * 3.5;
+        } else {
+          g.crystalMat.color.setHex(0x00e5ff);
+          g.crystalMat.emissive.setHex(0x00e5ff);
+          g.crystalMat.emissiveIntensity = 1.6;
+        }
+      });
+
+      // Telemetry Pulses Traversing Gate Ring
+      for (let i = activePulses.length - 1; i >= 0; i--) {
+        const p = activePulses[i];
+        const prevGate = Math.floor(p.progress * 6);
+        p.progress += dt * p.speed;
+        const currGate = Math.min(5, Math.floor(p.progress * 6));
+
+        if (currGate > prevGate || (prevGate === 0 && p.progress < 0.05)) {
+          if (p.isRefused && currGate >= p.tripGateIdx) {
+            flashGate(p.tripGateIdx, true);
+            scene.remove(p.mesh);
+            activePulses.splice(i, 1);
+            continue;
+          } else {
+            flashGate(currGate, false);
+          }
+        }
+
+        if (p.progress >= 1.0) {
+          flashGate(5, false);
+          scene.remove(p.mesh);
+          activePulses.splice(i, 1);
+          continue;
+        }
+
+        const angle = p.progress * Math.PI * 2 - Math.PI / 2;
+        p.mesh.position.set(Math.cos(angle) * gateRadius, -1.2 + Math.sin(p.progress * Math.PI) * 0.6, Math.sin(angle) * gateRadius);
+      }
+
+      // Smooth Camera Preset Transitions
+      if (camLerpTarget) {
+        camera.position.lerp(camLerpTarget.pos, 0.08);
+        controls.target.lerp(camLerpTarget.target, 0.08);
+        if (camera.position.distanceTo(camLerpTarget.pos) < 0.05) {
+          camLerpTarget = null;
+        }
+      }
+
+      controls.update();
+      composer.render();
+    }
+
+    animate();
+
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
