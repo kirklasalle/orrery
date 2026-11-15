@@ -94,7 +94,10 @@ def test_http_adapter_mocked_request_success():
     mock_resp.read.return_value = b'{"items": [1, 2, 3]}'
     mock_resp.__enter__.return_value = mock_resp
 
-    with patch("urllib.request.urlopen", return_value=mock_resp):
+    fake_addrinfo = [(2, 1, 6, "", ("93.184.216.34", 443))]
+    with patch("socket.getaddrinfo", return_value=fake_addrinfo), patch(
+        "urllib.request.OpenerDirector.open", return_value=mock_resp
+    ):
         receipt = adapter.execute(act)
 
     assert receipt.success
@@ -116,7 +119,10 @@ def test_http_adapter_mocked_http_error():
     mock_err = urllib.error.HTTPError("https://api.example.com/items/99", 404, "Not Found", {}, None)
     mock_err.read = MagicMock(return_value=b"Item not found")
 
-    with patch("urllib.request.urlopen", side_effect=mock_err):
+    fake_addrinfo = [(2, 1, 6, "", ("93.184.216.34", 443))]
+    with patch("socket.getaddrinfo", return_value=fake_addrinfo), patch(
+        "urllib.request.OpenerDirector.open", side_effect=mock_err
+    ):
         receipt = adapter.execute(act)
 
     assert not receipt.success

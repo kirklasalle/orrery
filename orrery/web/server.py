@@ -8,8 +8,10 @@ Zero mandatory third-party dependencies: uses Python standard library http.serve
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
+import secrets
 import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -30,13 +32,22 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
     ledger: Optional[EventLedger] = None
     settings: Optional[Settings] = None
+    auth_token: Optional[str] = None
+
+    def _is_authorized(self) -> bool:
+        if not self.auth_token:
+            return True
+        auth_header = self.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return False
+        token = auth_header[7:]
+        return hmac.compare_digest(token.encode("utf-8"), self.auth_token.encode("utf-8"))
 
     def _send_json(self, data: Any, status: int = HTTPStatus.OK) -> None:
         payload = json.dumps(data, indent=2).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(payload)
 
@@ -49,6 +60,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_GET(self) -> None:
+        if self.path.startswith("/api/") and not self._is_authorized():
+            self._send_json({"error": "Unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+            return
+
         # Route requests
         if self.path in ("/", "/index.html"):
             if DASHBOARD_HTML_PATH.is_file():
@@ -113,20 +128,36 @@ class GovernanceDashboardServer:
         port: int = 8080,
         ledger: Optional[EventLedger] = None,
         settings: Optional[Settings] = None,
+        auth_token: Optional[str] = None,
     ) -> None:
         self.host = host
         self.port = port
         self.ledger = ledger
         self.settings = settings or get_settings()
+        is_loopback = host in ("127.0.0.1", "localhost", "::1")
+        if not is_loopback and not auth_token:
+            auth_token = secrets.token_urlsafe(24)
+            logger.warning(
+                "Non-loopback dashboard bind (%s) without explicit auth_token; generated ephemeral bearer token.",
+                host,
+            )
+        self.auth_token = auth_token
         self._server: Optional[HTTPServer] = None
         self._thread: Optional[threading.Thread] = None
 
     def start(self) -> None:
         """Starts the server in a background thread."""
-        DashboardRequestHandler.ledger = self.ledger
-        DashboardRequestHandler.settings = self.settings
+        handler_cls = type(
+            "_BoundDashboardHandler",
+            (DashboardRequestHandler,),
+            {
+                "ledger": self.ledger,
+                "settings": self.settings,
+                "auth_token": self.auth_token,
+            },
+        )
 
-        self._server = HTTPServer((self.host, self.port), DashboardRequestHandler)
+        self._server = HTTPServer((self.host, self.port), handler_cls)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
         logger.info("Orrery Dashboard Server listening at http://%s:%d", self.host, self.port)

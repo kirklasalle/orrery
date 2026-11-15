@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security & Fixes (Phase 2 Hardening)
+
+- **HTTP Adapter SSRF, DNS, Redirect & Async Hardening (`orrery/adapters/http.py`)**:
+  - Added `_is_disallowed_ip()` and `_validate_url()` blocking loopback, private (RFC 1918), link-local, multicast, reserved, and unspecified IPs on both literals and `socket.getaddrinfo()` DNS resolution results.
+  - Added `_SafeRedirectHandler` to re-validate every HTTP redirect hop against the SSRF and domain allowlist policies.
+  - Wrapped blocking HTTP execution in `asyncio.to_thread` inside `execute_action()`.
+- **Process Adapter Session Isolation & Bounded Capture (`orrery/adapters/process.py`)**:
+  - Added OS-isolated process session/group creation (`start_new_session=True` on POSIX, `CREATE_NEW_PROCESS_GROUP` on Windows) so `_kill_tree()` cannot terminate the parent process group.
+  - Added incremental bounded stream capture (`_read_stream_capped`) enforcing `max_output_bytes` during streaming, and clamped `timeout_seconds` to `[0.1, max_timeout_seconds]`.
+- **Dashboard XSS, CORS & Auth Hardening (`orrery/web/server.py`, `orrery/web/dashboard.html`)**:
+  - Replaced `innerHTML` event card rendering with safe `document.createElement` + `textContent` DOM construction.
+  - Removed permissive `Access-Control-Allow-Origin: *` header and enforced Bearer token authentication (`Authorization: Bearer <token>`) on `/api/*` endpoints for non-loopback bindings (auto-generating an ephemeral token if none is supplied).
+- **A2A Signature Binding & Tier Validation (`orrery/core/a2a.py`)**:
+  - Bound `envelope.key_id == message.sender_id` during `A2AMessage.verify_signature()`, validated claimed `sender_tier` against registered endpoints, and avoided mutating `message.recipient_tier` in-place after verification.
+- **LLM Goal Judge Async & Prompt Isolation (`orrery/core/judge.py`)**:
+  - Fixed `adapter.adapter_name` -> `adapter.name` and sync `adapter.execute()` -> `await adapter.execute_action()` (`verify_goal_async()` + safe sync/loop-aware `verify_goal()`).
+  - Isolated untrusted goal, planned actions, receipts, and lessons inside structured JSON `<UNTRUSTED_EXECUTION_DATA>` boundaries.
+- **Gate Ordering & Non-Mutation (`orrery/core/dispatcher.py`, `orrery/gates/pipeline.py`)**:
+  - Moved `RateLimitGate` after `ApprovalGate` so denied actions do not consume rate-limit quota, and avoided mutating `action.risk` in-place inside `GovernancePipeline.evaluate()`.
+- **Fail-Closed Critique & Child Halt Propagation (`orrery/core/critique.py`, `orrery/cycles/base.py`)**:
+  - `SelfCritiqueEngine.evaluate()` now fails closed (`score=0.0`, `passed=False`) when both `planned_actions` and `execution_receipts` are empty (unless `goal_check` explicitly verifies the goal), and scores against `max(len(planned), len(receipts), 1)`.
+  - `BaseCycle.delegate_to_child()` now propagates `CycleStatus.HALTED` upward to the parent cycle.
+- **Fail-Closed Simulation Guard (`orrery/adapters/storage.py`, `orrery/adapters/openrouter.py`)**:
+  - Enforced `ADP-011` fail-closed errors (`success=False`) when `is_simulation=False` and required `storage_root` or `api_key` configuration is absent.
+- **Documentation Visuals (`README.md`, `docs/assets/`)**:
+  - Added generated hero banner (`docs/assets/orrery-hero.jpg`) and 4-tier/6-gate architecture diagram (`docs/assets/orrery-architecture.jpg`).
+
 ### Security & Fixes (Phase 1 Hardening)
 
 - **Database Adapter Read-Only & Sandbox Hardening (`orrery/adapters/database.py`)**:

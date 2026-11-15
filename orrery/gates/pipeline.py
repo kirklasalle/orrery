@@ -191,18 +191,8 @@ class GovernancePipeline:
                     reason=held.reason,
                 )
 
-            # 4. Rate-Limiting Gate
-            rate_dec = self.rate_limit_gate.evaluate(action)
-            if not rate_dec.allowed:
-                return GateVerdict(
-                    allowed=False,
-                    gate_name="RateLimitGate",
-                    policy_id=rate_dec.policy_id,
-                    reason=rate_dec.reason,
-                )
-
-            # 5. Approval Gate
-            # Determine effective risk
+            # 4. Approval Gate
+            # Determine effective risk without mutating caller's ActionPayload
             candidates = [action.risk]
             if adapter is not None:
                 declared = getattr(adapter, "declared_risks", {}).get(action.action_name)
@@ -210,15 +200,26 @@ class GovernancePipeline:
                     candidates.append(declared)
                 else:
                     candidates.append(ActionRisk.IRREVERSIBLE)
-            action.risk = max(candidates, key=lambda r: _RISK_SEVERITY[r])
+            effective_risk = max(candidates, key=lambda r: _RISK_SEVERITY[r])
+            evaluated_action = action.model_copy(update={"risk": effective_risk})
 
-            approval_dec = self.approval_gate.evaluate(action)
+            approval_dec = self.approval_gate.evaluate(evaluated_action)
             if not approval_dec.allowed:
                 return GateVerdict(
                     allowed=False,
                     gate_name="ApprovalGate",
                     policy_id=approval_dec.policy_id,
                     reason=approval_dec.reason,
+                )
+
+            # 5. Rate-Limiting Gate (after approval so denied actions don't burn quota)
+            rate_dec = self.rate_limit_gate.evaluate(evaluated_action)
+            if not rate_dec.allowed:
+                return GateVerdict(
+                    allowed=False,
+                    gate_name="RateLimitGate",
+                    policy_id=rate_dec.policy_id,
+                    reason=rate_dec.reason,
                 )
 
             return GateVerdict(

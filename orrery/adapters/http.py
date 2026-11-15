@@ -14,9 +14,12 @@ Provides governed outbound HTTP communication over standard HTTPS/HTTP with:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import ipaddress
 import json
 import logging
+import socket
 import time
 import urllib.error
 import urllib.parse
@@ -36,6 +39,33 @@ BLOCKED_SSRF_HOSTS = {
 }
 
 
+def _is_disallowed_ip(ip_str: str) -> bool:
+    """Returns True for loopback, private, link-local, multicast, reserved, or unspecified IPs."""
+    ip = ipaddress.ip_address(ip_str.split("%")[0])
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Re-validates every HTTP redirect hop against the SSRF and domain policy."""
+
+    def __init__(self, validator):
+        super().__init__()
+        self._validator = validator
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        err = self._validator(newurl)
+        if err:
+            raise urllib.error.URLError(f"Redirect blocked by SSRF policy: {err}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 class HttpAdapter(BaseAdapter):
     """
     Adapter for governed REST API interactions.
@@ -43,6 +73,7 @@ class HttpAdapter(BaseAdapter):
 
     adapter_name = "http"
     target_params: ClassVar[tuple] = ("url",)
+    _redirect_handler_cls = _SafeRedirectHandler
 
     declared_risks: ClassVar[Mapping[str, ActionRisk]] = {
         "get": ActionRisk.READ_ONLY,
@@ -84,7 +115,55 @@ class HttpAdapter(BaseAdapter):
         }
 
     async def execute_action(self, action: ActionPayload) -> ExecutionReceipt:
-        return self.execute(action)
+        return await asyncio.to_thread(self.execute, action)
+
+    def _validate_url(self, raw_url: str) -> Optional[str]:
+        """Validates URL scheme, hostname, domain allowlist, and resolved IP addresses."""
+        try:
+            parsed = urllib.parse.urlparse(raw_url)
+            if parsed.scheme not in ("http", "https"):
+                return f"unsupported URL scheme '{parsed.scheme}': {raw_url}"
+            hostname = (parsed.hostname or "").lower()
+            if not parsed.netloc or not hostname:
+                return f"invalid URL: missing hostname ({raw_url})"
+        except Exception as exc:
+            return f"URL parse error: {exc}"
+
+        if hostname in self.blocked_hosts or hostname == "localhost":
+            return f"SSRF violation: host '{hostname}' is blocked by SSRF policy"
+
+        try:
+            if _is_disallowed_ip(hostname):
+                return f"SSRF violation: IP '{hostname}' is blocked by SSRF policy (private/loopback/reserved)"
+        except ValueError:
+            pass
+
+        if self.allowed_domains is not None:
+            domain_ok = any(
+                hostname == d.lower() or hostname.endswith("." + d.lower())
+                for d in self.allowed_domains
+            )
+            if not domain_ok:
+                return f"Envelope violation: domain '{hostname}' is not permitted by adapter allowed_domains"
+
+        if not self.is_simulation:
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            try:
+                infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+            except OSError as exc:
+                return f"DNS resolution failed for '{hostname}': {exc}"
+            for info in infos:
+                sockaddr = info[4]
+                if not sockaddr:
+                    continue
+                ip_str = str(sockaddr[0])
+                try:
+                    if _is_disallowed_ip(ip_str):
+                        return f"Resolved IP '{ip_str}' for '{hostname}' is blocked by SSRF policy (private/loopback/reserved)"
+                except ValueError:
+                    return f"Unrecognized resolved address '{ip_str}' for '{hostname}'"
+
+        return None
 
     def execute(self, action: ActionPayload) -> ExecutionReceipt:
         method = action.action_name.lower()
@@ -104,43 +183,9 @@ class HttpAdapter(BaseAdapter):
                 error="missing required parameter 'url'",
             )
 
-        # Parse and validate URL
-        parsed = urllib.parse.urlparse(raw_url)
-        if parsed.scheme not in ("http", "https"):
-            return self._receipt(
-                action=action,
-                success=False,
-                error=f"unsupported URL scheme '{parsed.scheme}'; only http and https are permitted",
-            )
-
-        hostname = (parsed.hostname or "").lower()
-        if not hostname:
-            return self._receipt(
-                action=action,
-                success=False,
-                error="invalid URL: missing hostname",
-            )
-
-        # SSRF Protection: Block metadata IP endpoints
-        if hostname in self.blocked_hosts:
-            return self._receipt(
-                action=action,
-                success=False,
-                error=f"SSRF violation: host '{hostname}' is blocked as a protected cloud metadata target",
-            )
-
-        # Envelope check: Allowed domains
-        if self.allowed_domains is not None:
-            domain_allowed = any(
-                hostname == allowed or hostname.endswith("." + allowed)
-                for allowed in self.allowed_domains
-            )
-            if not domain_allowed:
-                return self._receipt(
-                    action=action,
-                    success=False,
-                    error=f"Envelope violation: domain '{hostname}' is not in the allowed domains allowlist",
-                )
+        url_err = self._validate_url(raw_url)
+        if url_err:
+            return self._receipt(action=action, success=False, error=url_err)
 
         headers = dict(self.default_headers)
         if isinstance(params.get("headers"), dict):
@@ -181,7 +226,8 @@ class HttpAdapter(BaseAdapter):
             )
 
             start_time = time.time()
-            with urllib.request.urlopen(req, timeout=timeout) as response:
+            opener = urllib.request.build_opener(self._redirect_handler_cls(self._validate_url))
+            with opener.open(req, timeout=timeout) as response:
                 content_bytes = response.read(self.max_response_bytes + 1)
                 truncated = len(content_bytes) > self.max_response_bytes
                 if truncated:

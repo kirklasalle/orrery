@@ -479,17 +479,6 @@ class CycleDispatcher:
                 )
                 return self._refuse(action, held.policy_id, held.reason, ledger=False)
 
-            # Rate-limiting gate: check frequency ceilings before approval or execution
-            rate_decision = self.rate_limit_gate.evaluate(action)
-            if not rate_decision.allowed:
-                logger.error(
-                    "Action %r refused by %s: %s",
-                    action.action_name,
-                    rate_decision.policy_id,
-                    rate_decision.reason,
-                )
-                return self._refuse(action, rate_decision.policy_id, rate_decision.reason)
-
             # A classification describes; it never authorises. The classified risk feeds the
             # approval gate exactly as an adapter's own declaration would.
             action.risk = self.effective_risk(
@@ -514,6 +503,17 @@ class CycleDispatcher:
                     success=False,
                     error=f"Refused by policy {decision.policy_id}: {decision.reason}",
                 )
+
+            # Rate-limiting gate: check frequency ceilings only after approval succeeds
+            rate_decision = self.rate_limit_gate.evaluate(action)
+            if not rate_decision.allowed:
+                logger.error(
+                    "Action %r refused by %s: %s",
+                    action.action_name,
+                    rate_decision.policy_id,
+                    rate_decision.reason,
+                )
+                return self._refuse(action, rate_decision.policy_id, rate_decision.reason)
 
             try:
                 receipt = await adapter.execute_action(action)

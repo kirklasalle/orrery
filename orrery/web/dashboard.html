@@ -850,18 +850,47 @@
       events.forEach(e => {
         const card = document.createElement("div");
         card.className = "event-card";
-        card.innerHTML = `
-          <div class="event-top">
-            <span class="event-type ${e.type}">${e.type.toUpperCase()} &bull; ${e.policy}</span>
-            <span class="event-time">${e.time}</span>
-          </div>
-          <div class="event-summary">${e.title}</div>
-          <div class="event-meta">
-            <span>Cycle: ${e.cycle}</span>
-            <span>Seq: #${e.sequence}</span>
-            <span class="event-hash" title="${e.hash}">Hash: ${e.hash.substring(0, 12)}...</span>
-          </div>
-        `;
+        const top = document.createElement("div");
+        top.className = "event-top";
+
+        const typeSpan = document.createElement("span");
+        const safeType = String(e.type || "").replace(/[^a-zA-Z0-9_-]/g, "");
+        typeSpan.className = `event-type ${safeType}`;
+        typeSpan.textContent = `${String(e.type || "").toUpperCase()} • ${String(e.policy || "")}`;
+
+        const timeSpan = document.createElement("span");
+        timeSpan.className = "event-time";
+        timeSpan.textContent = String(e.time || "");
+
+        top.appendChild(typeSpan);
+        top.appendChild(timeSpan);
+
+        const summary = document.createElement("div");
+        summary.className = "event-summary";
+        summary.textContent = String(e.title || "");
+
+        const meta = document.createElement("div");
+        meta.className = "event-meta";
+
+        const cycleSpan = document.createElement("span");
+        cycleSpan.textContent = `Cycle: ${String(e.cycle || "")}`;
+
+        const seqSpan = document.createElement("span");
+        seqSpan.textContent = `Seq: #${String(e.sequence ?? "")}`;
+
+        const hashSpan = document.createElement("span");
+        hashSpan.className = "event-hash";
+        const hashStr = String(e.hash || "");
+        hashSpan.title = hashStr;
+        hashSpan.textContent = `Hash: ${hashStr.substring(0, 12)}...`;
+
+        meta.appendChild(cycleSpan);
+        meta.appendChild(seqSpan);
+        meta.appendChild(hashSpan);
+
+        card.appendChild(top);
+        card.appendChild(summary);
+        card.appendChild(meta);
         container.appendChild(card);
       });
     }

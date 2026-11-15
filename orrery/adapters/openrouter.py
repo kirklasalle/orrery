@@ -123,8 +123,8 @@ class OpenRouterAdapter(BaseAdapter):
         temperature = float(params.get("temperature", 0.7))
         response_format = params.get("response_format")
 
-        # Simulation or air-gapped mode when no API key is available or simulation explicitly requested
-        if self.is_simulation or not self.api_key:
+        # Simulation mode when explicitly requested
+        if self.is_simulation:
             simulated_response = self._simulate_response(
                 model=model,
                 messages=messages,
@@ -134,6 +134,13 @@ class OpenRouterAdapter(BaseAdapter):
                 action=action,
                 success=True,
                 output=simulated_response,
+            )
+
+        if not self.api_key:
+            return self._receipt(
+                action=action,
+                success=False,
+                error="ADP-011: OpenRouterAdapter requires api_key when is_simulation=False",
             )
 
         # Real OpenRouter API call

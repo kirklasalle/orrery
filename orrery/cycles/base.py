@@ -152,7 +152,19 @@ class BaseCycle(ABC):
             [f"[{child_cycle.tier.value}] {lesson}" for lesson in child_result.lessons]
         )
 
-        if child_result.status == CycleStatus.FAILED:
+        if child_result.status == CycleStatus.HALTED:
+            logger.error(f"[{self.tier.value} Cycle] Child tier [{child_cycle.tier.value}] HALTED; propagating halt.")
+            self.context.status = CycleStatus.HALTED
+            self.context.variables[f"child_{child_cycle.tier.value.lower()}_halted"] = True
+            self.context.execution_receipts.append(
+                ExecutionReceipt(
+                    action_id=child_result.cycle_id,
+                    action_name=f"delegate_to_{child_cycle.tier.value.lower()}",
+                    success=False,
+                    error=f"Child {child_cycle.tier.value} cycle {child_result.cycle_id} halted.",
+                )
+            )
+        elif child_result.status == CycleStatus.FAILED:
             logger.error(f"[{self.tier.value} Cycle] Child tier [{child_cycle.tier.value}] execution failed.")
             self.context.variables[f"child_{child_cycle.tier.value.lower()}_failed"] = True
             # A failed child must fail the parent's reflection, not vanish into a variable.

@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from orrery.core.delegation import DelegationBudget, DelegationPolicy, DelegationRequest
 from orrery.core.ledger import EventLedger
-from orrery.core.signing import Keyring, OperatorSigner
+from orrery.core.signing import Keyring, OperatorSigner, decode_signature
 from orrery.core.integrity import canonical_json
 from orrery.core.types import CycleTier
 
@@ -81,8 +81,11 @@ class A2AMessage(BaseModel):
         self.signature = signer.sign(canonical_str)
 
     def verify_signature(self, keyring: Keyring) -> bool:
-        """Verifies message signature against trusted public keyring."""
+        """Verifies message signature against trusted public keyring and binds key_id to sender_id."""
         if not self.signature:
+            return False
+        envelope = decode_signature(self.signature)
+        if envelope is None or envelope.key_id != self.sender_id:
             return False
         canonical_str = canonical_json(self.body_dict())
         return keyring.verify(canonical_str, self.signature)
@@ -158,6 +161,16 @@ class A2AGovernanceRouter:
                 self._log_refusal(message, "A2A-SIGNATURE-INVALID", reason)
                 return A2ADeliveryResult(delivered=False, policy_id="A2A-SIGNATURE-INVALID", reason=reason)
 
+        registered_sender = self._endpoints.get(message.sender_id)
+        registered_sender_tier = registered_sender[0] if registered_sender else None
+        if registered_sender_tier is not None and registered_sender_tier != message.sender_tier:
+            reason = (
+                f"Sender tier mismatch for {message.sender_id!r}: "
+                f"claimed {message.sender_tier.value}, registered {registered_sender_tier.value}."
+            )
+            self._log_refusal(message, "A2A-TIER-MISMATCH", reason)
+            return A2ADeliveryResult(delivered=False, policy_id="A2A-TIER-MISMATCH", reason=reason)
+
         # 3. Delegation checks if delegating
         if message.intent == "delegate_task":
             req = DelegationRequest(
@@ -178,12 +191,15 @@ class A2AGovernanceRouter:
                 )
             self.delegation_budget.record(req)
 
-        if message.recipient_tier is None:
-            message.recipient_tier = recipient_tier
+        dispatched_message = (
+            message.model_copy(update={"recipient_tier": recipient_tier})
+            if message.recipient_tier is None
+            else message
+        )
 
         # 4. Dispatch to handler
         try:
-            res = handler(message)
+            res = handler(dispatched_message)
             import inspect
             if inspect.isawaitable(res):
                 res = await res

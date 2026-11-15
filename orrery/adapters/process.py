@@ -88,7 +88,11 @@ class ProcessAdapter(BaseAdapter):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.allowed_programs = frozenset(allowed_programs)
-        self.timeout_seconds = float(self.config.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS))
+        self.timeout_seconds = max(0.1, float(self.config.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS)))
+        self.max_timeout_seconds = max(
+            self.timeout_seconds,
+            float(self.config.get("max_timeout_seconds", self.timeout_seconds)),
+        )
         self.max_output_bytes = int(self.config.get("max_output_bytes", DEFAULT_MAX_OUTPUT_BYTES))
         self.inherit_environment = bool(self.config.get("inherit_environment", False))
         self.effect_envelope = EffectEnvelope(paths=[str(self.root)])
@@ -206,31 +210,94 @@ class ProcessAdapter(BaseAdapter):
             "path": shutil.which(program) if allowed else None,
         }
 
+    def _clamp_timeout(self, raw_timeout: Any) -> float:
+        if raw_timeout is None:
+            return self.timeout_seconds
+        try:
+            val = float(raw_timeout)
+        except (TypeError, ValueError):
+            return self.timeout_seconds
+        if val != val:  # NaN check
+            return self.timeout_seconds
+        return max(0.1, min(val, self.max_timeout_seconds))
+
+    def _read_stream_capped(self, stream: Any, limit: int, chunks: List[bytes], truncated_flag: List[bool]) -> None:
+        total = 0
+        try:
+            while True:
+                data = stream.read(4096)
+                if not data:
+                    break
+                remaining = limit - total
+                if remaining > 0:
+                    chunks.append(data[:remaining])
+                    total += min(len(data), remaining)
+                if len(data) > remaining:
+                    truncated_flag[0] = True
+                    while stream.read(8192):
+                        pass
+                    break
+        finally:
+            try:
+                stream.close()
+            except Exception:
+                pass
+
     def _do_run_program(self, params: Dict[str, Any]) -> ActionOutcome:
         executable = self._resolve_program(params.get("program"))
         args = self._resolve_args(params.get("args"))
         workdir = self._resolve_workdir(params.get("cwd"))
-        timeout = float(params.get("timeout_seconds") or self.timeout_seconds)
+        timeout = self._clamp_timeout(params.get("timeout_seconds"))
+
+        popen_kwargs: Dict[str, Any] = {
+            "cwd": str(workdir),
+            "env": self._environment(params.get("env")),
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "shell": False,
+        }
+        if os.name == "nt":
+            popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+        else:
+            popen_kwargs["start_new_session"] = True
 
         proc = subprocess.Popen(  # noqa: S603 - shell=False with an allowlisted executable
             [executable, *args],
-            cwd=str(workdir),
-            env=self._environment(params.get("env")),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            shell=False,
+            **popen_kwargs,
         )
+
+        import threading
+        stdout_chunks: List[bytes] = []
+        stderr_chunks: List[bytes] = []
+        stdout_trunc = [False]
+        stderr_trunc = [False]
+        t_out = threading.Thread(
+            target=self._read_stream_capped,
+            args=(proc.stdout, self.max_output_bytes, stdout_chunks, stdout_trunc),
+            daemon=True,
+        )
+        t_err = threading.Thread(
+            target=self._read_stream_capped,
+            args=(proc.stderr, self.max_output_bytes, stderr_chunks, stderr_trunc),
+            daemon=True,
+        )
+        t_out.start()
+        t_err.start()
 
         timed_out = False
         try:
-            raw_stdout, raw_stderr = proc.communicate(timeout=timeout)
+            proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             timed_out = True
             self._kill_tree(proc.pid)
-            raw_stdout, raw_stderr = proc.communicate(timeout=5)
+        finally:
+            t_out.join(timeout=2.0)
+            t_err.join(timeout=2.0)
 
-        stdout, stdout_truncated = self._clip(raw_stdout)
-        stderr, stderr_truncated = self._clip(raw_stderr)
+        stdout = b"".join(stdout_chunks).decode("utf-8", errors="replace")
+        stderr = b"".join(stderr_chunks).decode("utf-8", errors="replace")
+        stdout_truncated = stdout_trunc[0]
+        stderr_truncated = stderr_trunc[0]
 
         output = {
             "program": params.get("program"),

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/orrery-hero.jpg" alt="Orrery: Deterministic Governance for Autonomous Agents" width="100%" />
+</p>
+
 # Orrery: Multi-Tier Stateful Cognitive Framework
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
@@ -91,6 +95,10 @@ print(context.status)   # COMPLETED, FAILED, or HALTED — never a fabricated su
 ---
 
 ## 🏗️ Architecture Overview
+
+<p align="center">
+  <img src="docs/assets/orrery-architecture.jpg" alt="Orrery 4-Tier Cognitive Orbit and 6-Gate Fail-Closed Pipeline" width="100%" />
+</p>
 
 ```text
 orrery/

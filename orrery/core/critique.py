@@ -76,9 +76,38 @@ class SelfCritiqueEngine:
             context.critiques.append(barren)
             return barren
 
+        if not receipts and not planned:
+            verification = self._verify_goal(context)
+            if verification is not None and verification.verified:
+                verified_empty = CritiqueResult(
+                    score=1.0,
+                    passed=True,
+                    reasoning=(
+                        f"Reflection evaluation passed with score 1.00 (Threshold: {self.threshold:.2f}). "
+                        f"Goal verified: {verification.detail}"
+                    ),
+                    recommendations=[],
+                    goal_verified=True,
+                    verification_detail=verification.detail,
+                )
+                context.critiques.append(verified_empty)
+                return verified_empty
+            detail = verification.detail if verification is not None else "no planned actions or execution receipts"
+            empty_fail = CritiqueResult(
+                score=0.0,
+                passed=False,
+                reasoning=f"Execution phase produced zero receipts and zero planned actions ({detail}).",
+                recommendations=["Ensure planning and execution produce verifiable receipts."],
+                goal_verified=verification.verified if verification is not None else None,
+                verification_detail=verification.detail if verification is not None else "",
+            )
+            context.critiques.append(empty_fail)
+            return empty_fail
+
         failed_receipts = [r for r in receipts if not r.success]
-        total_actions = len(receipts) if receipts else 1
-        success_ratio = (total_actions - len(failed_receipts)) / total_actions
+        total_actions = max(len(planned), len(receipts), 1)
+        succeeded_count = max(0, len(receipts) - len(failed_receipts))
+        success_ratio = succeeded_count / total_actions
 
         recommendations = [
             f"Action '{fr.action_name}' failed: {fr.error or 'Unknown error'}"

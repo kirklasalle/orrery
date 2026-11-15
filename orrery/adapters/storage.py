@@ -163,7 +163,7 @@ class StorageAdapter(BaseAdapter):
         if err:
             return self._receipt(action=action, success=False, error=err)
 
-        if self.is_simulation or not self.root:
+        if self.is_simulation:
             return self._receipt(
                 action=action,
                 success=True,
@@ -174,6 +174,13 @@ class StorageAdapter(BaseAdapter):
                     "action": action_name,
                     "etag": hashlib.md5(f"{bucket}:{key}".encode()).hexdigest(),
                 },
+            )
+
+        if self.root is None:
+            return self._receipt(
+                action=action,
+                success=False,
+                error="ADP-011: StorageAdapter requires storage_root when is_simulation=False",
             )
 
         try:
