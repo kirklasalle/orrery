@@ -36,16 +36,11 @@ context = await dispatcher.run_full_cycle(
 print(context.status)   # COMPLETED, FAILED, or HALTED — never a fabricated success
 ```
 
-> ### ⚠️ Project Status: Early-Stage Reference Implementation
+> ### ⚠️ Project Status: Reference Implementation (Hardened Phases 1–3)
 >
-> This repository is a **working architectural scaffold**, not a production system. Read this before evaluating:
+> This repository is a **working architectural reference implementation** — verify its boundaries before deploying:
 >
-> - `FileSystemAdapter` and `ProcessAdapter` are **real**. The first reads, writes, moves, and
->   deletes actual files inside a sandbox root it refuses to escape; the second runs allowlisted
->   programs with `shell=False`, a timeout, bounded output, and no inherited environment. The
->   three legacy adapters (`openclaw`, `hermes`, `windows_os`) remain **simulations**. They
->   perform no network, LLM, or OS calls, declare themselves via `is_simulation`, and every one
->   of their receipts is tagged `simulated: True`.
+> - **Real & Hardened Adapters:** `FileSystemAdapter`, `ProcessAdapter`, `DatabaseAdapter`, `StorageAdapter`, `HttpAdapter`, and `OpenRouterAdapter` are included in `orrery/adapters/` with sandbox confinement, read-only SQL enforcement, SSRF/DNS/redirect filtering, session-isolated process execution, and `ADP-011` fail-closed guards when `is_simulation=False`. The three legacy adapters (`openclaw`, `hermes`, `windows_os`) remain **simulations** under `examples/simulated/`, declare `is_simulation`, and tag every receipt `simulated: True`.
 > - An action with no registered adapter now produces a **failed** receipt rather than a fabricated
 >   successful one, so an unwired framework reports failure instead of silent success.
 > - Every adapter is checked against the **Adapter Conformance Kit** in CI: receipts must echo the
@@ -180,14 +175,14 @@ Transitions deterministically through:
 
 ### 4. Enterprise Integration Adapters
 
-> ⚠️ Only `FileSystemAdapter` and `ProcessAdapter` perform real work, and they are the only
-> adapters in the installed package. The three simulations moved to `examples/simulated/`.
+All six built-in adapters in `orrery/adapters/` enforce `sandbox_roots()` visibility, risk classification, and `ADP-011` fail-closed errors when `is_simulation=False`:
 
-- **[FileSystemAdapter](orrery/adapters/filesystem.py)**: Real sandboxed file I/O. The reference
-  implementation for adapter authors, and the source of the first genuinely irreversible action.
-- **[ProcessAdapter](orrery/adapters/process.py)**: Real subprocess execution, allowlisted and
-  sandboxed. `run_program` is declared `IRREVERSIBLE` — the adapter cannot know what a program
-  did, so it assumes the worst it could do, and the approval gate refuses it without consent.
+- **[FileSystemAdapter](orrery/adapters/filesystem.py)**: Real sandboxed file I/O with canonical `Path.resolve().is_relative_to(...)` confinement.
+- **[ProcessAdapter](orrery/adapters/process.py)**: Allowlisted `shell=False` subprocess runner with OS session isolation, clamped timeouts, and incremental output byte caps (`run_program` is declared `IRREVERSIBLE`).
+- **[DatabaseAdapter](orrery/adapters/database.py)**: SQLite adapter with sandbox path confinement and read-only SQL enforcement (`?mode=ro`, `PRAGMA query_only = ON`, single-statement `SELECT` validation).
+- **[StorageAdapter](orrery/adapters/storage.py)**: Object-storage adapter with canonical bucket/key confinement across sources and `copy_object` destinations.
+- **[HttpAdapter](orrery/adapters/http.py)**: REST adapter with domain allowlists, private/loopback/link-local/RFC 1918 IP & DNS blocking, redirect-hop re-validation, and `asyncio.to_thread` execution.
+- **[OpenRouterAdapter](orrery/adapters/openrouter.py)**: Governed LLM inference adapter with model allowlists, token caps, and `is_simulation` / `api_key` fail-closed checks.
 
 Three simulated adapters (`openclaw`, `hermes`, `windows_os`) live in
 [examples/simulated/](examples/simulated) rather than in the package, so a simulation cannot be
@@ -262,6 +257,7 @@ never answer an earlier one's:
 | **Envelope** | Does it reach outside what may be touched? | `LAW1-ENVELOPE` |
 | **Quarantine** | Can it even be characterised? | `LAW1-QUARANTINE` |
 | **Approval** | Is it understood, and does a human consent? | `RISK-001`…`RISK-005` |
+| **Rate Limit** | Is the action within per-minute frequency ceilings? *(after Approval)* | `RATE-001` |
 | **Invariants** | Is the *pattern* pathological? *(after the fact)* | `LAW10-INVARIANT` |
 
 The first four refuse before anything runs. The fifth does not — see below.
@@ -377,9 +373,38 @@ pytest tests/ -v
 # Run executable demonstration script
 python examples/demo_cycle.py
 
+# Run formal gate composition soundness verification (THM-01..THM-05)
+orrery verify
+
+# Verify charter document digests
+orrery charter
+
+# Launch the Governance Console & Real-Time 3D WebGL Gyroscope
+orrery dashboard --open --gyroscope
+
 # Measure the backtracking claim
 python -m orrery.bench
 ```
+
+---
+
+## 🌀 Real-Time 3D WebGL Gyroscope & Universal Plugin
+
+### 3D WebGL Gyroscope Studio (`/gyroscope`)
+
+`GovernanceDashboardServer` serves both the audit console (`/`) and an interactive PBR **3D WebGL Gyroscope** ([orrery/web/gyroscope.html](orrery/web/gyroscope.html)) at `/gyroscope`, synced in real time over Server-Sent Events (`/api/stream`):
+
+- **4-Tier Nested Gimbal Kinematics:** `META` (Strategic) → `MACRO` (Campaign) → `MESO` (Tactical) → `MICRO` (Execution flywheel core).
+- **6-Gate Orbital Checkpoints:** Real-time telemetry pulses traverse the 6 gate pylons into the `SHA-256 Hash-Chained EventLedger` base ring, flashing crimson on interdiction/refusal.
+- **Studio Controls & Video Export:** On-page RPM, precession, tier-explode, camera presets, and built-in **60 FPS `.webm` video capture** + PNG still export.
+
+### Universal Agent & Harness Plugin
+
+Orrery ships both as a standalone Python package (`[project.scripts]`: `orrery`, `orrery-mcp`, `orrery-dashboard`) and as a **universal plugin bundle** compatible with Antigravity, Claude Code, Cursor, Codex, and Gemini CLI:
+
+- **Manifest & Assets:** [plugin.json](plugin.json), [assets/logo.svg](assets/logo.svg)
+- **MCP Server Config:** [mcp_config.json](mcp_config.json) / [.mcp.json](.mcp.json) (`orrery-governance` running `python -m orrery.cli mcp`)
+- **Agent Skill & Rules:** [skills/orrery-governance/SKILL.md](skills/orrery-governance/SKILL.md), [rules/AGENTS.md](rules/AGENTS.md)
 
 ---
 
