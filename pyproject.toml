@@ -47,9 +47,17 @@ dev = [
     "opentelemetry-sdk>=1.20.0",
 ]
 
+[project.scripts]
+orrery = "orrery.cli:main"
+orrery-mcp = "orrery.cli:mcp_main"
+orrery-dashboard = "orrery.cli:dashboard_main"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["orrery*"]
+
+[tool.setuptools.package-data]
+"orrery.web" = ["*.html", "vendor/**/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

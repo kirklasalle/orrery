@@ -13,8 +13,9 @@ import json
 import logging
 import secrets
 import threading
+import time
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -34,6 +35,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
     ledger: Optional[EventLedger] = None
     settings: Optional[Settings] = None
     auth_token: Optional[str] = None
+    stop_event: Optional[threading.Event] = None
 
     def _is_authorized(self) -> bool:
         if not self.auth_token:
@@ -120,6 +122,45 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._send_json(report.model_dump(mode="json"))
             return
 
+        if self.path.startswith("/api/stream"):
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+
+            last_seq = -1
+            ticks = 0
+            try:
+                while not (self.stop_event and self.stop_event.is_set()):
+                    if self.ledger is not None:
+                        events = self.ledger.events
+                        fresh = [ev for ev in events if ev.sequence > last_seq]
+                        for ev in fresh:
+                            payload = {
+                                "sequence": ev.sequence,
+                                "type": ev.event_type.split(".")[-1] if "." in ev.event_type else ev.event_type,
+                                "title": ev.summary,
+                                "time": ev.timestamp,
+                                "policy": ev.policy_id or "LAW9-LEDGER",
+                                "hash": ev.content_hash or ev.digest(),
+                                "cycle": ev.cycle_id or "MAIN",
+                                "data": ev.data,
+                            }
+                            msg = f"event: ledger\ndata: {json.dumps(payload)}\n\n".encode("utf-8")
+                            self.wfile.write(msg)
+                            last_seq = ev.sequence
+                        if fresh:
+                            self.wfile.flush()
+                    ticks += 1
+                    if ticks % 20 == 0:
+                        self.wfile.write(b": keepalive\n\n")
+                        self.wfile.flush()
+                    time.sleep(0.25)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+            return
+
         self.send_error(HTTPStatus.NOT_FOUND, f"Path not found: {self.path}")
 
     def log_message(self, format: str, *args: Any) -> None:
@@ -150,11 +191,13 @@ class GovernanceDashboardServer:
                 host,
             )
         self.auth_token = auth_token
-        self._server: Optional[HTTPServer] = None
+        self._stop_event = threading.Event()
+        self._server: Optional[ThreadingHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
 
     def start(self) -> None:
         """Starts the server in a background thread."""
+        self._stop_event.clear()
         handler_cls = type(
             "_BoundDashboardHandler",
             (DashboardRequestHandler,),
@@ -162,16 +205,19 @@ class GovernanceDashboardServer:
                 "ledger": self.ledger,
                 "settings": self.settings,
                 "auth_token": self.auth_token,
+                "stop_event": self._stop_event,
             },
         )
 
-        self._server = HTTPServer((self.host, self.port), handler_cls)
+        self._server = ThreadingHTTPServer((self.host, self.port), handler_cls)
+        self._server.daemon_threads = True
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
         logger.info("Orrery Dashboard Server listening at http://%s:%d", self.host, self.port)
 
     def stop(self) -> None:
         """Stops the server."""
+        self._stop_event.set()
         if self._server:
             self._server.shutdown()
             self._server.server_close()

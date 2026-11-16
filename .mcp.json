@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "orrery-governance": {
+      "command": "python",
+      "args": ["-m", "orrery.cli", "mcp"]
+    }
+  }
+}

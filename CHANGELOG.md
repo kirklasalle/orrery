@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (Phase 3 Standalone Packaging, Real-Time SSE & Universal Plugin)
+
+- **Standalone CLI & Package Data (`orrery/cli.py`, `pyproject.toml`, `orrery/mcp/server.py`)**:
+  - Added `orrery` (`dashboard` / `gyroscope`, `mcp`, `verify`, `charter`), `orrery-mcp`, and `orrery-dashboard` `[project.scripts]` entry points plus `[tool.setuptools.package-data]` for `orrery/web/*.html`.
+  - Updated `run_stdio_server()` in `orrery/mcp/server.py` with Windows `ProactorEventLoop` stdio compatibility.
+- **Real-Time SSE & 3D WebGL Gyroscope (`orrery/web/server.py`, `orrery/web/gyroscope.html`, `orrery/web/dashboard.html`)**:
+  - Upgraded `GovernanceDashboardServer` to `ThreadingHTTPServer` and added authenticated `/api/stream` Server-Sent Events (`text/event-stream`) pushing new `EventLedger` entries in real time.
+  - Added `/gyroscope` (`orrery/web/gyroscope.html`) interactive PBR Three.js 4-tier gyroscope + 6-gate visualizer with 60 FPS `.webm` video recording and SSE live sync (with polling fallback).
+- **Universal Plugin Bundle (`plugin.json`, `mcp_config.json`, `.mcp.json`, `skills/orrery-governance/SKILL.md`, `rules/AGENTS.md`, `assets/logo.svg`)**:
+  - Packaged Orrery as a universal agent/harness plugin compatible with Antigravity, Claude Code, Cursor, Codex, and Gemini CLI.
+
 ### Security & Fixes (Phase 2 Hardening)
 
 - **HTTP Adapter SSRF, DNS, Redirect & Async Hardening (`orrery/adapters/http.py`)**:

@@ -348,8 +348,24 @@ class MCPGovernanceServer:
 async def run_stdio_server(server: Optional[MCPGovernanceServer] = None) -> None:
     """
     Runs the MCP server over standard input / output (stdio transport).
+    Supports both POSIX pipe readers and Windows ProactorEventLoop.
     """
     mcp_server = server or MCPGovernanceServer()
+
+    if sys.platform == "win32":
+        while True:
+            text = await asyncio.to_thread(sys.stdin.readline)
+            if not text:
+                break
+            text = text.strip()
+            if not text:
+                continue
+            response = await mcp_server.handle_message(text)
+            if response is not None:
+                sys.stdout.write(json.dumps(response) + "\n")
+                sys.stdout.flush()
+        return
+
     loop = asyncio.get_running_loop()
     reader = asyncio.StreamReader()
     protocol = asyncio.StreamReaderProtocol(reader)

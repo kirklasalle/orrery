@@ -893,6 +893,55 @@
 
     let lastSeenSeq = -1;
     let pollHandle = null;
+    let sseAbort = null;
+
+    function handleIncomingEvent(ev) {
+      if ((ev.sequence ?? 0) <= lastSeenSeq && lastSeenSeq !== -1) return;
+      appendFeedItem(ev);
+      if (lastSeenSeq !== -1) {
+        const refused = String(ev.type || "").includes("refused") || String(ev.type || "").includes("halted");
+        const gateIdx = mapPolicyToGate(ev.policy);
+        spawnTelemetryPulse(refused, gateIdx);
+      }
+      if ((ev.sequence ?? 0) > lastSeenSeq) lastSeenSeq = ev.sequence;
+    }
+
+    async function startSseStream() {
+      if (sseAbort) sseAbort.abort();
+      sseAbort = new AbortController();
+      const base = serverUrlInput.value.replace(/\/+$/, "");
+      const token = document.getElementById("authToken").value.trim();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      try {
+        const res = await fetch(`${base}/api/stream`, { headers, signal: sseAbort.signal });
+        if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+        document.getElementById("connDot").classList.add("live");
+        document.getElementById("connLabel").textContent = "LIVE SSE STREAM";
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const frames = buf.split("\n\n");
+          buf = frames.pop() || "";
+          for (const frame of frames) {
+            const dataLine = frame.split("\n").find((l) => l.startsWith("data: "));
+            if (dataLine) {
+              const ev = JSON.parse(dataLine.slice(6));
+              handleIncomingEvent(ev);
+              document.getElementById("connLabel").textContent = `LIVE SSE • #${ev.sequence}`;
+            }
+          }
+        }
+      } catch (_err) {
+        if (sseAbort && sseAbort.signal.aborted) return;
+        // Fall back to polling if SSE stream closes or isn't supported
+        pollLiveOrrery();
+        if (!pollHandle) pollHandle = setInterval(pollLiveOrrery, 1200);
+      }
+    }
 
     async function pollLiveOrrery() {
       const base = serverUrlInput.value.replace(/\/+$/, "");
@@ -910,14 +959,7 @@
           events.slice(-8).forEach((ev) => appendFeedItem(ev));
           lastSeenSeq = events.length ? events[events.length - 1].sequence : 0;
         } else {
-          const fresh = events.filter((ev) => (ev.sequence ?? 0) > lastSeenSeq);
-          fresh.forEach((ev) => {
-            appendFeedItem(ev);
-            const refused = String(ev.type || "").includes("refused") || String(ev.type || "").includes("halted");
-            const gateIdx = mapPolicyToGate(ev.policy);
-            spawnTelemetryPulse(refused, gateIdx);
-            if (ev.sequence > lastSeenSeq) lastSeenSeq = ev.sequence;
-          });
+          events.filter((ev) => (ev.sequence ?? 0) > lastSeenSeq).forEach(handleIncomingEvent);
         }
       } catch (_err) {
         document.getElementById("connDot").classList.remove("live");
@@ -927,15 +969,13 @@
 
     document.getElementById("connectBtn").addEventListener("click", () => {
       lastSeenSeq = -1;
-      pollLiveOrrery();
-      if (pollHandle) clearInterval(pollHandle);
-      pollHandle = setInterval(pollLiveOrrery, 1000);
+      if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
+      startSseStream();
     });
 
-    // Auto-start polling when served over HTTP(S)
+    // Auto-start SSE stream when served over HTTP(S)
     if (window.location.protocol.startsWith("http")) {
-      pollLiveOrrery();
-      pollHandle = setInterval(pollLiveOrrery, 1200);
+      startSseStream();
     }
 
     // Offline Simulation Buttons
