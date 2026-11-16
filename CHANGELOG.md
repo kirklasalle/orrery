@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-15
+
 ### Added (Phase 3 Standalone Packaging, Real-Time SSE & Universal Plugin)
 
 - **Standalone CLI & Package Data (`orrery/cli.py`, `pyproject.toml`, `orrery/mcp/server.py`)**:

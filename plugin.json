@@ -1,7 +1,7 @@
 {
   "name": "orrery-governance",
   "displayName": "Orrery Governance",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Deterministic fail-closed 6-gate governance runtime, SHA-256 hash-chained audit ledger, MCP server, and real-time 3D WebGL gyroscope console for autonomous agents.",
   "author": {
     "name": "Kirk LaSalle"

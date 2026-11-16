@@ -103,7 +103,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             st = self.settings or get_settings()
             status_data = {
                 "system": "Orrery Agentic Governance",
-                "version": "0.2.0",
+                "version": "0.3.0",
                 "gate_stack": {
                     "interdiction": len(st.interdiction.prohibitions),
                     "envelope": st.envelope.enforce,
