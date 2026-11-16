@@ -56,10 +56,11 @@ print(context.status)   # COMPLETED, FAILED, or HALTED — never a fabricated su
 >   forbidden. **A cycle cannot act on its own ledger, checkpoints, attestation, keyring, or halt
 >   file**, and an operator halt stops it as `HALTED` rather than `FAILED`. What is and is not
 >   enforced, and by which test, is documented in [GOVERNANCE.md](GOVERNANCE.md) and gated in CI.
-> - **Almost every safety control is off by default.** Signing, attestation, quarantine,
->   envelopes, and invariants are all deployment decisions, and a default install enforces none
->   of them. That is stated here rather than discovered later. `python -m orrery.tools.attest`
->   shows exactly what the running configuration permits, and
+> - **Most advanced controls are opt-in by default.** While `InterdictionGate` (`.halt` and
+>   self-protection of `.ledger/`, `.checkpoints/`, attestation, and keyring) and `ApprovalGate`
+>   (`RISK-001` for `IRREVERSIBLE` actions) are active out of the box, **signing, attestation,
+>   quarantine, envelopes, rate limits, and invariants** are off by default until configured.
+>   `python -m orrery.tools.attest` shows exactly what the running configuration permits, and
 >   [config/hardened.yaml](config/hardened.yaml) is the other end of the range — every control
 >   on, exercised by `tests/test_hardened_profile.py` so the cost of turning them on is measured
 >   rather than assumed.
